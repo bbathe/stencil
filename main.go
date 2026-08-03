@@ -1,0 +1,158 @@
+package main
+
+import (
+	"flag"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"github.com/bbathe/stencil/internal/converter"
+)
+
+// version is set at build time via -ldflags "-X main.version=<tag>".
+var version = "dev"
+
+const usage = `stencil — convert GitHub Flavored Markdown to .docx
+
+Usage:
+  stencil [flags] INPUT.md
+  stencil INPUT.md [flags]
+
+Flags:
+`
+
+func main() {
+	flag.Usage = func() {
+		fmt.Fprint(os.Stderr, usage)
+		flag.PrintDefaults()
+	}
+
+	var (
+		templatePath string
+		outputPath   string
+		styleMapPath string
+		showVersion  bool
+	)
+
+	flag.StringVar(&templatePath, "template", "", "path to reference .docx (borrows styles)")
+	flag.StringVar(&outputPath, "output", "", "output path (default: input with .docx extension)")
+	flag.StringVar(&styleMapPath, "style-map", "", "path to JSON style-map file")
+	flag.BoolVar(&showVersion, "version", false, "print version and exit")
+
+	// Go's flag package stops at the first non-flag argument, so
+	// `stencil README.md --output foo.docx` would leave --output unparsed.
+	// Fix: split os.Args into flags and positional args, put flags first,
+	// then hand the reordered slice to flag.Parse.
+	flags, positional := splitArgs(os.Args[1:])
+	if err := flag.CommandLine.Parse(append(flags, positional...)); err != nil {
+		os.Exit(2)
+	}
+
+	if showVersion {
+		fmt.Printf("stencil %s\n", version)
+		os.Exit(0)
+	}
+
+	// After reordering, flag.Args() holds only the positional args.
+	args := flag.Args()
+	if len(args) != 1 {
+		flag.Usage()
+		os.Exit(1)
+	}
+
+	inputPath := args[0]
+
+	if outputPath == "" {
+		outputPath = replaceExt(inputPath, ".docx")
+	} else {
+		// If --output is a directory, place the .docx inside it.
+		if fi, err := os.Stat(outputPath); err == nil && fi.IsDir() {
+			base := replaceExt(filepath.Base(inputPath), ".docx")
+			outputPath = filepath.Join(outputPath, base)
+		} else if !strings.HasSuffix(strings.ToLower(outputPath), ".docx") {
+			// Ensure the output always ends in .docx.
+			outputPath += ".docx"
+		}
+	}
+
+	opts := converter.Options{
+		InputPath:    inputPath,
+		OutputPath:   outputPath,
+		TemplatePath: templatePath,
+		StyleMapPath: styleMapPath,
+	}
+
+	if err := converter.Run(opts); err != nil {
+		fmt.Fprintf(os.Stderr, "stencil: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("wrote %s\n", outputPath)
+}
+
+// splitArgs separates flag arguments from positional arguments so that
+// flags may appear before or after the input file.
+//
+// It understands which of stencil's own flags take a value so it can
+// correctly pair e.g. ["--output", "foo.docx"] as a single flag entry.
+func splitArgs(args []string) (flags, positional []string) {
+	// Flags that consume the next token as their value.
+	valueFlags := map[string]bool{
+		"-template":  true,
+		"--template": true,
+		"-output":    true,
+		"--output":   true,
+		"-style-map": true,
+		"--style-map": true,
+	}
+
+	i := 0
+	for i < len(args) {
+		arg := args[i]
+
+		if !strings.HasPrefix(arg, "-") {
+			// Plain positional argument.
+			positional = append(positional, arg)
+			i++
+			continue
+		}
+
+		// -flag=value or --flag=value: self-contained, no next token needed.
+		if strings.Contains(arg, "=") {
+			flags = append(flags, arg)
+			i++
+			continue
+		}
+
+		// Boolean flags or unknown single-token flags.
+		if !valueFlags[arg] {
+			flags = append(flags, arg)
+			i++
+			continue
+		}
+
+		// Value flag: consume the next token too.
+		flags = append(flags, arg)
+		if i+1 < len(args) {
+			flags = append(flags, args[i+1])
+			i += 2
+		} else {
+			i++
+		}
+	}
+	return
+}
+
+// replaceExt replaces the file extension of path with ext.
+// If path has no extension, ext is appended.
+func replaceExt(path, ext string) string {
+	base := filepath.Base(path)
+	dir := filepath.Dir(path)
+
+	if i := strings.LastIndex(base, "."); i >= 0 {
+		base = base[:i]
+	}
+
+	return filepath.Join(dir, base+ext)
+}
