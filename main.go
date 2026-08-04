@@ -99,11 +99,11 @@ func main() {
 func splitArgs(args []string) (flags, positional []string) {
 	// Flags that consume the next token as their value.
 	valueFlags := map[string]bool{
-		"-template":  true,
-		"--template": true,
-		"-output":    true,
-		"--output":   true,
-		"-style-map": true,
+		"-template":   true,
+		"--template":  true,
+		"-output":     true,
+		"--output":    true,
+		"-style-map":  true,
 		"--style-map": true,
 	}
 

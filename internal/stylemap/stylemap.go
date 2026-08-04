@@ -5,6 +5,7 @@ package stylemap
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 )
 
@@ -33,15 +34,13 @@ var defaults = map[string]string{
 // so that any key not present in the file still falls back to its default value.
 func Load(path string) (*StyleMap, error) {
 	m := make(map[string]string, len(defaults))
-	for k, v := range defaults {
-		m[k] = v
-	}
+	maps.Copy(m, defaults)
 
 	if path == "" {
 		return &StyleMap{m: m}, nil
 	}
 
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) //nolint:gosec // path is caller-supplied style-map flag
 	if err != nil {
 		return nil, fmt.Errorf("reading style-map %q: %w", path, err)
 	}
@@ -51,9 +50,7 @@ func Load(path string) (*StyleMap, error) {
 		return nil, fmt.Errorf("parsing style-map %q: %w", path, err)
 	}
 
-	for k, v := range overrides {
-		m[k] = v
-	}
+	maps.Copy(m, overrides)
 
 	return &StyleMap{m: m}, nil
 }

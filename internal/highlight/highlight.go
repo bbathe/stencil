@@ -51,8 +51,8 @@ type langConfig struct {
 	keywords     map[string]bool
 	types        map[string]bool
 	builtins     map[string]bool
-	lineComments []string   // e.g. ["//", "#"]
-	blockComment [2]string  // [open, close], both empty = none
+	lineComments []string  // e.g. ["//", "#"]
+	blockComment [2]string // [open, close], both empty = none
 	stringDelims []strDelim
 }
 
@@ -90,8 +90,8 @@ var languages = map[string]langConfig{
 			"except", "finally", "for", "from", "global", "if", "import", "in",
 			"is", "lambda", "nonlocal", "not", "or", "pass", "raise", "return",
 			"try", "while", "with", "yield"),
-		types:    kwset("bool", "bytes", "bytearray", "complex", "dict", "float", "frozenset", "int", "list", "memoryview", "object", "range", "set", "str", "tuple", "type"),
-		builtins: kwset("abs", "all", "any", "bin", "callable", "chr", "compile", "delattr", "dir", "divmod", "enumerate", "eval", "exec", "filter", "format", "getattr", "globals", "hasattr", "hash", "help", "hex", "id", "input", "isinstance", "issubclass", "iter", "len", "locals", "map", "max", "min", "next", "oct", "open", "ord", "pow", "print", "property", "repr", "reversed", "round", "setattr", "slice", "sorted", "staticmethod", "sum", "super", "vars", "zip"),
+		types:        kwset("bool", "bytes", "bytearray", "complex", "dict", "float", "frozenset", "int", "list", "memoryview", "object", "range", "set", "str", "tuple", "type"),
+		builtins:     kwset("abs", "all", "any", "bin", "callable", "chr", "compile", "delattr", "dir", "divmod", "enumerate", "eval", "exec", "filter", "format", "getattr", "globals", "hasattr", "hash", "help", "hex", "id", "input", "isinstance", "issubclass", "iter", "len", "locals", "map", "max", "min", "next", "oct", "open", "ord", "pow", "print", "property", "repr", "reversed", "round", "setattr", "slice", "sorted", "staticmethod", "sum", "super", "vars", "zip"),
 		lineComments: []string{"#"},
 		stringDelims: []strDelim{
 			{`"""`, `"""`, "", true},
@@ -139,7 +139,7 @@ var languages = map[string]langConfig{
 			{"'", "'", `\`, false},
 		},
 	},
-	"c": cLang(),
+	"c":   cLang(),
 	"cpp": cppLang(),
 	"c++": cppLang(),
 	"bash": {
@@ -316,7 +316,8 @@ func cLang() langConfig {
 
 func cppLang() langConfig {
 	cfg := cLang()
-	for _, kw := range []string{"alignas", "alignof", "and", "and_eq", "asm",
+	for _, kw := range []string{
+		"alignas", "alignof", "and", "and_eq", "asm",
 		"bitand", "bitor", "bool", "catch", "class", "compl", "concept",
 		"consteval", "constexpr", "constinit", "const_cast", "co_await",
 		"co_return", "co_yield", "decltype", "delete", "dynamic_cast", "explicit",
@@ -324,7 +325,8 @@ func cppLang() langConfig {
 		"not", "not_eq", "nullptr", "operator", "or", "or_eq", "private",
 		"protected", "public", "reinterpret_cast", "requires", "static_assert",
 		"static_cast", "template", "this", "thread_local", "throw", "true", "try",
-		"typeid", "typename", "using", "virtual", "wchar_t", "xor", "xor_eq"} {
+		"typeid", "typename", "using", "virtual", "wchar_t", "xor", "xor_eq",
+	} {
 		cfg.keywords[kw] = true
 	}
 	return cfg

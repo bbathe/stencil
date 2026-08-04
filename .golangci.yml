@@ -1,0 +1,29 @@
+# Go linters — enable deliberately; gosec and copyloopvar added for security and loop-var safety.
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  default: none
+  enable:
+    - bodyclose
+    - copyloopvar
+    - errcheck
+    - gosec
+    - govet
+    - ineffassign
+    - modernize
+    - noctx
+    - staticcheck
+    - unused
+
+formatters:
+  enable:
+    - gofumpt
+    - goimports
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0

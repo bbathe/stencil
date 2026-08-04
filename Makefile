@@ -2,9 +2,9 @@ BINARY  := stencil
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LDFLAGS := -ldflags "-X main.version=$(VERSION) -s -w"
 
-.PHONY: build test lint clean install release deps
+.PHONY: build test lint clean install release get
 
-deps:
+get:
 	go mod tidy
 	go mod download
 
@@ -15,7 +15,7 @@ test:
 	go test ./...
 
 lint:
-	go vet ./...
+	golangci-lint run
 
 clean:
 	rm -f $(BINARY)
