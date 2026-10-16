@@ -22,6 +22,44 @@ func TestDeterministicWrite(t *testing.T) {
 	}
 }
 
+func TestTableHasGridWidths(t *testing.T) {
+	d := New()
+	tbl := d.AddTable()
+	hdr := tbl.AddRow(true)
+	hdr.AddCell("Normal").AddRun("A")
+	hdr.AddCell("Normal").AddRun("B")
+	row := tbl.AddRow(false)
+	row.AddCell("Normal").AddRun("1")
+	row.AddCell("Normal").AddRun("2")
+
+	xml, err := d.documentXML()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(xml, []byte(`<w:tblGrid>`)) {
+		t.Fatal("missing tblGrid")
+	}
+	if !bytes.Contains(xml, []byte(`w:gridCol w:w="`)) {
+		t.Fatal("missing gridCol widths")
+	}
+	if bytes.Contains(xml, []byte(`w:tcW w:w="0"`)) {
+		t.Fatal("cell width should not be zero")
+	}
+	if !bytes.Contains(xml, []byte(`w:tblLayout w:type="fixed"`)) {
+		t.Fatal("expected fixed table layout")
+	}
+}
+
+func TestEqualColumnWidths(t *testing.T) {
+	got := equalColumnWidths(2, 9360)
+	if len(got) != 2 || got[0]+got[1] != 9360 {
+		t.Fatalf("got %v", got)
+	}
+	if got[0] != 4680 || got[1] != 4680 {
+		t.Fatalf("uneven split: %v", got)
+	}
+}
+
 func TestCorePropsNoAuthor(t *testing.T) {
 	d := New()
 	data, err := d.coreProps()

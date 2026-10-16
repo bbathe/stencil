@@ -467,20 +467,40 @@ func writeImageRun(b *bytes.Buffer, img imageItem) {
 		img.widthEMU, img.heightEMU, id, id, altS, id, id, altS, img.rId, img.widthEMU, img.heightEMU)
 }
 
+// usablePageWidthTwips is the content width for letter page with 1" margins
+// (12240 - 2*1440), matching documentXML sectPr.
+const usablePageWidthTwips = 9360
+
 func writeTable(b *bytes.Buffer, t *Table) {
+	cols := tableColumnCount(t)
+	widths := equalColumnWidths(cols, usablePageWidthTwips)
+
 	b.WriteString(`<w:tbl>`)
 	b.WriteString(`<w:tblPr>` +
 		`<w:tblStyle w:val="TableGrid"/>` +
-		`<w:tblW w:w="0" w:type="auto"/>` +
+		// Prefer fixed layout with an explicit grid; w:tcW="0" auto collapses
+		// columns to near-zero width in Word desktop.
+		`<w:tblW w:w="5000" w:type="pct"/>` +
+		`<w:tblLayout w:type="fixed"/>` +
 		`</w:tblPr>`)
+
+	b.WriteString(`<w:tblGrid>`)
+	for _, w := range widths {
+		fmt.Fprintf(b, `<w:gridCol w:w="%d"/>`, w)
+	}
+	b.WriteString(`</w:tblGrid>`)
 
 	for _, row := range t.rows {
 		b.WriteString(`<w:tr>`)
 		if row.isHdr {
 			b.WriteString(`<w:trPr><w:tblHeader/></w:trPr>`)
 		}
-		for _, cell := range row.cells {
-			b.WriteString(`<w:tc><w:tcPr><w:tcW w:w="0" w:type="auto"/>`)
+		for i, cell := range row.cells {
+			cw := widths[0]
+			if i < len(widths) {
+				cw = widths[i]
+			}
+			fmt.Fprintf(b, `<w:tc><w:tcPr><w:tcW w:w="%d" w:type="dxa"/>`, cw)
 			if row.isHdr {
 				b.WriteString(`<w:shd w:val="clear" w:color="auto" w:fill="D9D9D9"/>`)
 			}
@@ -491,6 +511,33 @@ func writeTable(b *bytes.Buffer, t *Table) {
 		b.WriteString(`</w:tr>`)
 	}
 	b.WriteString(`</w:tbl>` + "\n")
+}
+
+func tableColumnCount(t *Table) int {
+	n := 0
+	for _, row := range t.rows {
+		if len(row.cells) > n {
+			n = len(row.cells)
+		}
+	}
+	return n
+}
+
+// equalColumnWidths splits totalTwips across cols as evenly as possible.
+func equalColumnWidths(cols, totalTwips int) []int {
+	if cols < 1 {
+		return nil
+	}
+	base := totalTwips / cols
+	rem := totalTwips % cols
+	out := make([]int, cols)
+	for i := range out {
+		out[i] = base
+		if i < rem {
+			out[i]++
+		}
+	}
+	return out
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
