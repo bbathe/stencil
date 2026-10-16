@@ -443,10 +443,7 @@ func writeImageRun(b *bytes.Buffer, img imageItem) {
 	var alt bytes.Buffer
 	_ = xml.EscapeText(&alt, []byte(img.altText))
 	altS := alt.String()
-	id := img.drawingID
-	if id < 1 {
-		id = 1
-	}
+	id := max(img.drawingID, 1)
 
 	fmt.Fprintf(b,
 		`<w:r><w:rPr/><w:drawing>`+

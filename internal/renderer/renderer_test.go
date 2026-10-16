@@ -113,7 +113,7 @@ func TestGoldenFeatures(t *testing.T) {
 func TestImageRelativeToBaseDir(t *testing.T) {
 	dir := t.TempDir()
 	sub := filepath.Join(dir, "assets")
-	if err := os.Mkdir(sub, 0o755); err != nil {
+	if err := os.Mkdir(sub, 0o750); err != nil {
 		t.Fatal(err)
 	}
 	writeTinyPNG(t, filepath.Join(sub, "logo.png"))
@@ -128,7 +128,7 @@ func TestImageRelativeToBaseDir(t *testing.T) {
 	if err := renderer.Render(doc, out, renderer.Options{BaseDir: dir, StyleMap: sm}); err != nil {
 		t.Fatal(err)
 	}
-	data, err := os.ReadFile(out)
+	data, err := os.ReadFile(out) //nolint:gosec // G304: test temp path
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -206,11 +206,11 @@ func TestUnhandledNodeErrors(t *testing.T) {
 func writeTinyPNG(t *testing.T, path string) {
 	t.Helper()
 	img := image.NewRGBA(image.Rect(0, 0, 2, 2))
-	f, err := os.Create(path)
+	f, err := os.Create(path) //nolint:gosec // G304: test temp path
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	if err := png.Encode(f, img); err != nil {
 		t.Fatal(err)
 	}
