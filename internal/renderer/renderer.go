@@ -4,6 +4,7 @@ package renderer
 
 import (
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/yuin/goldmark/ast"
@@ -17,8 +18,28 @@ import (
 )
 
 // Render walks doc and writes a DOCX file to outputPath.
-// If templatePath is non-empty, styles are borrowed from that document.
-func Render(doc *parser.Document, outputPath, templatePath string, sm *stylemap.StyleMap) error {
+// If templatePath is non-empty, styles.xml is borrowed from that document
+// (numbering, headers/footers, and margins are not).
+// baseDir is used to resolve relative local image paths (typically the
+// directory of the source .md file).
+func Render(doc *parser.Document, outputPath, templatePath, baseDir string, sm *stylemap.StyleMap) error {
+	d, err := build(doc, templatePath, baseDir, sm)
+	if err != nil {
+		return err
+	}
+	return d.SaveToFile(outputPath)
+}
+
+// RenderTo walks doc and writes a DOCX to w.
+func RenderTo(doc *parser.Document, w io.Writer, templatePath, baseDir string, sm *stylemap.StyleMap) error {
+	d, err := build(doc, templatePath, baseDir, sm)
+	if err != nil {
+		return err
+	}
+	return d.Write(w)
+}
+
+func build(doc *parser.Document, templatePath, baseDir string, sm *stylemap.StyleMap) (*docx.Document, error) {
 	var (
 		d   *docx.Document
 		err error
@@ -27,13 +48,14 @@ func Render(doc *parser.Document, outputPath, templatePath string, sm *stylemap.
 	if templatePath != "" {
 		d, err = docx.LoadTemplate(templatePath)
 		if err != nil {
-			return err
+			return nil, err
 		}
 	} else {
 		d = docx.New()
 	}
+	d.BaseDir = baseDir
 
-	w := &walker{
+	wk := &walker{
 		doc:                d,
 		source:             doc.Source,
 		styleMap:           sm,
@@ -43,13 +65,12 @@ func Render(doc *parser.Document, outputPath, templatePath string, sm *stylemap.
 
 	// Pre-walk: register all footnote definitions so that inline FootnoteLink
 	// nodes can resolve their docx ids during the main pass.
-	w.collectFootnotes(doc.Node)
+	wk.collectFootnotes(doc.Node)
 
-	if err := ast.Walk(doc.Node, w.visit); err != nil {
-		return fmt.Errorf("walking AST: %w", err)
+	if err := ast.Walk(doc.Node, wk.visit); err != nil {
+		return nil, fmt.Errorf("walking AST: %w", err)
 	}
-
-	return d.SaveToFile(outputPath)
+	return d, nil
 }
 
 // ── Walker state ──────────────────────────────────────────────────────────────
@@ -175,7 +196,11 @@ func (w *walker) visit(node ast.Node, entering bool) (ast.WalkStatus, error) {
 				// Do NOT change currentPara — it still points at the footnote Para.
 				break
 			}
-			p := w.doc.AddParagraph(w.styleMap.Style("body"))
+			style := w.styleMap.Style("body")
+			if w.blockquoteDepth > 0 && w.pendingNumId == 0 {
+				style = w.styleMap.Style("blockquote")
+			}
+			p := w.doc.AddParagraph(style)
 			if w.pendingNumId > 0 {
 				// Loose list item: inherit the pending numPr.
 				p.SetNumPr(w.pendingNumId, w.pendingILvl)
@@ -247,7 +272,7 @@ func (w *walker) visit(node ast.Node, entering bool) (ast.WalkStatus, error) {
 		if entering {
 			var numId int
 			if n.IsOrdered() {
-				numId = w.doc.NewOrderedNumID()
+				numId = w.doc.NewOrderedNumID(n.Start)
 			} else {
 				numId = w.doc.BulletNumID()
 			}
@@ -301,6 +326,14 @@ func (w *walker) visit(node ast.Node, entering bool) (ast.WalkStatus, error) {
 	case *extast.TableCell:
 		if entering && w.currentRow != nil {
 			p := w.currentRow.AddCell(w.styleMap.Style("body"))
+			switch n.Alignment {
+			case extast.AlignLeft:
+				p.SetAlignment(docx.AlignLeft)
+			case extast.AlignCenter:
+				p.SetAlignment(docx.AlignCenter)
+			case extast.AlignRight:
+				p.SetAlignment(docx.AlignRight)
+			}
 			w.currentPara = p
 		} else {
 			w.currentPara = nil
@@ -360,6 +393,9 @@ func (w *walker) visit(node ast.Node, entering bool) (ast.WalkStatus, error) {
 				w.addStyledRun(string(n.Segment.Value(w.source)))
 				if n.HardLineBreak() {
 					w.currentPara.AddBreak()
+				} else if n.SoftLineBreak() {
+					// Soft breaks are newlines in the source that join with a space.
+					w.addStyledRun(" ")
 				}
 			}
 		}
@@ -418,13 +454,17 @@ func (w *walker) visit(node ast.Node, entering bool) (ast.WalkStatus, error) {
 		if entering {
 			w.ensureCurrentPara()
 			if w.currentPara != nil {
-				path := string(n.Destination)
+				dest := string(n.Destination)
 				altText := extractText(n, w.source)
-				rId, imgW, imgH, regErr := w.doc.RegisterImage(path)
+				path := w.doc.ResolveImagePath(dest)
+				rId, imgW, imgH, drawingID, regErr := w.doc.RegisterImage(path)
 				if regErr != nil {
+					if altText == "" {
+						altText = dest
+					}
 					w.currentPara.AddItalicRun(fmt.Sprintf("[image: %s]", altText))
 				} else {
-					w.currentPara.AddImageItem(rId, altText, imgW, imgH)
+					w.currentPara.AddImageItem(rId, altText, imgW, imgH, drawingID)
 				}
 			}
 		}

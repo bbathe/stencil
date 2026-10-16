@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 jobs:
-  release:
+  build:
     runs-on: ubuntu-latest
 
     strategy:
@@ -30,6 +30,9 @@ jobs:
           - goos: windows
             goarch: amd64
             suffix: windows-amd64.exe
+          - goos: windows
+            goarch: arm64
+            suffix: windows-arm64.exe
 
     steps:
       - uses: actions/checkout@v7
@@ -52,8 +55,33 @@ jobs:
             -o stencil-${{ matrix.suffix }} \
             .
 
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: stencil-${{ matrix.suffix }}
+          path: stencil-${{ matrix.suffix }}
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Checksums
+        working-directory: dist
+        run: |
+          sha256sum stencil-* | tee SHA256SUMS
+
       - name: Upload to release
         uses: softprops/action-gh-release@v3
         with:
-          files: stencil-${{ matrix.suffix }}
+          files: |
+            dist/stencil-*
+            dist/SHA256SUMS
           generate_release_notes: true

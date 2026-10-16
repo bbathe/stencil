@@ -25,13 +25,20 @@ import (
 	_ "image/jpeg"
 	_ "image/png"
 	"io"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
+
+	_ "golang.org/x/image/webp"
 )
 
 // ── Document ──────────────────────────────────────────────────────────────────
+
+// fixedZipTime is used for all zip entry timestamps and core properties so
+// identical content produces byte-identical .docx output.
+var fixedZipTime = time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
 
 // Document accumulates content and serialises it to a .docx file.
 type Document struct {
@@ -43,11 +50,19 @@ type Document struct {
 	hyperlinkMap map[string]string // url -> rId (dedup)
 	images       []imageEntry
 
-	// list numbering: numId 1 = bullets, 2..N = one per ordered list instance
-	orderedListCount int
+	// list numbering: numId 1 = bullets, 2..N = one per ordered list instance.
+	// orderedListStarts[i] is the start value for numId i+2.
+	orderedListStarts []int
+
+	// drawingID is a monotonically increasing id for wp:docPr / pic:cNvPr.
+	drawingID int
 
 	// footnotes
 	footnotes []footnoteEntry
+
+	// BaseDir is prepended to relative local image paths (typically the
+	// directory containing the source .md file). Empty means use the path as-is.
+	BaseDir string
 }
 
 type (
@@ -122,13 +137,37 @@ func (d *Document) RegisterHyperlink(url string) string {
 	return rId
 }
 
+// ResolveImagePath returns an absolute or cwd-relative filesystem path for a
+// markdown image destination. Remote URLs and data URIs are returned unchanged
+// (and will fail at open — callers should fall back to alt text).
+func (d *Document) ResolveImagePath(dest string) string {
+	if dest == "" {
+		return dest
+	}
+	if strings.HasPrefix(dest, "http://") || strings.HasPrefix(dest, "https://") ||
+		strings.HasPrefix(dest, "data:") {
+		return dest
+	}
+	// Strip optional file:// prefix.
+	if strings.HasPrefix(dest, "file://") {
+		if u, err := url.Parse(dest); err == nil {
+			dest = u.Path
+		}
+	}
+	if filepath.IsAbs(dest) || d.BaseDir == "" {
+		return dest
+	}
+	return filepath.Join(d.BaseDir, filepath.FromSlash(dest))
+}
+
 // RegisterImage reads the image file at path, stores its bytes, and returns
-// (rId, widthEMU, heightEMU).  On error the image is skipped and ("", 0, 0, err)
-// is returned so the caller can fall back to alt-text.
-func (d *Document) RegisterImage(path string) (string, int64, int64, error) {
+// (rId, widthEMU, heightEMU, drawingID).  On error the image is skipped and
+// ("", 0, 0, 0, err) is returned so the caller can fall back to alt-text.
+// path should already be resolved (see ResolveImagePath).
+func (d *Document) RegisterImage(path string) (string, int64, int64, int, error) {
 	data, err := os.ReadFile(path) //nolint:gosec // path is caller-supplied image path
 	if err != nil {
-		return "", 0, 0, fmt.Errorf("reading image %q: %w", path, err)
+		return "", 0, 0, 0, fmt.Errorf("reading image %q: %w", path, err)
 	}
 
 	ext := strings.TrimPrefix(strings.ToLower(filepath.Ext(path)), ".")
@@ -139,6 +178,9 @@ func (d *Document) RegisterImage(path string) (string, int64, int64, error) {
 		ext = "jpeg"
 	case "gif":
 		mime = "image/gif"
+	case "webp":
+		mime = "image/webp"
+		ext = "webp"
 	default:
 		ext = "png"
 	}
@@ -147,13 +189,15 @@ func (d *Document) RegisterImage(path string) (string, int64, int64, error) {
 	rId := fmt.Sprintf("rIdIM%d", n)
 	partName := fmt.Sprintf("word/media/image%d.%s", n, ext)
 	d.images = append(d.images, imageEntry{rId: rId, partName: partName, mimeType: mime, ext: ext, data: data})
+	d.drawingID++
+	drawingID := d.drawingID
 
 	// Dimensions in EMU (1 inch = 914400, 96 DPI → 9525 EMU/pixel)
 	const emuPerPx = int64(9525)
 	const maxW = int64(5943600) // 6.5 inches
 	cfg, _, decErr := image.DecodeConfig(bytes.NewReader(data))
 	if decErr != nil {
-		return rId, 3657600, 2743200, nil // 4" × 3" fallback
+		return rId, 3657600, 2743200, drawingID, nil // 4" × 3" fallback
 	}
 	w := int64(cfg.Width) * emuPerPx
 	h := int64(cfg.Height) * emuPerPx
@@ -161,7 +205,7 @@ func (d *Document) RegisterImage(path string) (string, int64, int64, error) {
 		h = h * maxW / w
 		w = maxW
 	}
-	return rId, w, h, nil
+	return rId, w, h, drawingID, nil
 }
 
 // AddFootnote registers a new footnote and returns its 1-based id and a *Para
@@ -178,12 +222,27 @@ func (d *Document) BulletNumID() int { return 1 }
 
 // NewOrderedNumID allocates a new numId for an ordered list instance.
 // Each separate ordered list must get its own numId so numbering restarts.
-func (d *Document) NewOrderedNumID() int {
-	d.orderedListCount++
-	return 1 + d.orderedListCount // 2, 3, 4, …
+// start is the 1-based initial number (markdown "3. item" → start=3); values
+// below 1 are treated as 1.
+func (d *Document) NewOrderedNumID(start int) int {
+	if start < 1 {
+		start = 1
+	}
+	d.orderedListStarts = append(d.orderedListStarts, start)
+	return 1 + len(d.orderedListStarts) // 2, 3, 4, …
 }
 
 // ── Paragraph ─────────────────────────────────────────────────────────────────
+
+// Alignment is horizontal text alignment for a paragraph or table cell.
+type Alignment int
+
+const (
+	AlignDefault Alignment = iota
+	AlignLeft
+	AlignCenter
+	AlignRight
+)
 
 // Para is a paragraph under construction.
 type Para struct {
@@ -194,6 +253,7 @@ type Para struct {
 	blockquoteDepth int        // 0 = not a blockquote; 1+ = nesting depth
 	hrule           bool
 	forceBold       bool
+	align           Alignment
 }
 
 // AddParagraph appends a new paragraph with the given Word style name.
@@ -218,6 +278,9 @@ func (p *Para) SetHRule() { p.hrule = true }
 
 // ForceBold makes every run in this paragraph bold regardless of run props.
 func (p *Para) ForceBold() { p.forceBold = true }
+
+// SetAlignment sets horizontal alignment (left/center/right).
+func (p *Para) SetAlignment(a Alignment) { p.align = a }
 
 // AddRun appends a plain run.
 func (p *Para) AddRun(text string) { p.addRun(textRun{text: text}) }
@@ -287,11 +350,12 @@ func (p *Para) AddHyperlinkRun(text, rId string, bold, italic, strike bool) {
 	p.items = append(p.items, hyperlinkItem{rId: rId, runs: []textRun{r}})
 }
 
-// AddImageItem embeds an image run.
-func (p *Para) AddImageItem(rId, altText string, widthEMU, heightEMU int64) {
+// AddImageItem embeds an image run. drawingID must be unique within the document.
+func (p *Para) AddImageItem(rId, altText string, widthEMU, heightEMU int64, drawingID int) {
 	p.items = append(p.items, imageItem{
 		rId: rId, altText: altText,
 		widthEMU: widthEMU, heightEMU: heightEMU,
+		drawingID: drawingID,
 	})
 }
 
@@ -402,6 +466,13 @@ func (d *Document) Write(w io.Writer) (retErr error) {
 		if err := writeEntry(zw, "word/footnotes.xml", data); err != nil {
 			return err
 		}
+		rels, err := d.footnotesRels()
+		if err != nil {
+			return fmt.Errorf("generating footnotes.xml.rels: %w", err)
+		}
+		if err := writeEntry(zw, "word/_rels/footnotes.xml.rels", rels); err != nil {
+			return err
+		}
 	}
 
 	// Images
@@ -451,7 +522,7 @@ func (d *Document) rootRels() ([]byte, error) {
 }
 
 func (d *Document) coreProps() ([]byte, error) {
-	now := time.Now().UTC().Format(time.RFC3339)
+	ts := fixedZipTime.Format(time.RFC3339)
 	return fmt.Appendf(nil, `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <cp:coreProperties
     xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties"
@@ -462,7 +533,7 @@ func (d *Document) coreProps() ([]byte, error) {
   <cp:lastModifiedBy>stencil</cp:lastModifiedBy>
   <dcterms:created xsi:type="dcterms:W3CDTF">%s</dcterms:created>
   <dcterms:modified xsi:type="dcterms:W3CDTF">%s</dcterms:modified>
-</cp:coreProperties>`, now, now), nil
+</cp:coreProperties>`, ts, ts), nil
 }
 
 func (d *Document) documentRels() ([]byte, error) {
@@ -534,13 +605,13 @@ func (d *Document) numbering() ([]byte, error) {
 	// ── Num 1: bullets (shared) ───────────────────────────────────────────────
 	b.WriteString(`<w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num>` + "\n")
 
-	// ── Nums 2..N: one per ordered-list instance (restart numbering) ──────────
-	for i := 0; i < d.orderedListCount; i++ {
+	// ── Nums 2..N: one per ordered-list instance (restart / custom start) ─────
+	for i, start := range d.orderedListStarts {
 		numId := i + 2
 		fmt.Fprintf(&b,
 			`<w:num w:numId="%d"><w:abstractNumId w:val="1"/>`+
-				`<w:lvlOverride w:ilvl="0"><w:startOverride w:val="1"/></w:lvlOverride>`+
-				`</w:num>`+"\n", numId)
+				`<w:lvlOverride w:ilvl="0"><w:startOverride w:val="%d"/></w:lvlOverride>`+
+				`</w:num>`+"\n", numId, start)
 	}
 
 	b.WriteString(`</w:numbering>`)
@@ -579,7 +650,12 @@ func (d *Document) documentXML() ([]byte, error) {
 func (d *Document) footnotesXML() ([]byte, error) {
 	var b bytes.Buffer
 	b.WriteString(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` + "\n")
-	b.WriteString(`<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">`)
+	b.WriteString(`<w:footnotes` +
+		` xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"` +
+		` xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"` +
+		` xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"` +
+		` xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"` +
+		` xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">`)
 
 	// Required separator footnotes
 	b.WriteString(`<w:footnote w:type="separator" w:id="-1"><w:p><w:r><w:separator/></w:r></w:p></w:footnote>`)
@@ -590,7 +666,7 @@ func (d *Document) footnotesXML() ([]byte, error) {
 		b.WriteString(`<w:pPr><w:pStyle w:val="FootnoteText"/></w:pPr>`)
 		b.WriteString(`<w:r><w:rPr><w:vertAlign w:val="superscript"/></w:rPr><w:footnoteRef/></w:r>`)
 		b.WriteString(`<w:r><w:t xml:space="preserve"> </w:t></w:r>`)
-		// Render the Para items (text runs, hyperlinks, etc.)
+		// Render the Para items (text runs, hyperlinks, images, etc.)
 		if fn.para != nil {
 			for _, item := range fn.para.items {
 				switch v := item.(type) {
@@ -602,6 +678,8 @@ func (d *Document) footnotesXML() ([]byte, error) {
 						writeRun(&b, r, false)
 					}
 					b.WriteString(`</w:hyperlink>`)
+				case imageItem:
+					writeImageRun(&b, v)
 				}
 			}
 		}
@@ -612,13 +690,55 @@ func (d *Document) footnotesXML() ([]byte, error) {
 	return b.Bytes(), nil
 }
 
+// footnotesRels emits relationships for hyperlinks and images referenced from
+// footnotes.xml. Word resolves r:id against this part, not document.xml.rels.
+func (d *Document) footnotesRels() ([]byte, error) {
+	usedHL := map[string]bool{}
+	usedIM := map[string]bool{}
+	for _, fn := range d.footnotes {
+		if fn.para == nil {
+			continue
+		}
+		for _, item := range fn.para.items {
+			switch v := item.(type) {
+			case hyperlinkItem:
+				usedHL[v.rId] = true
+			case imageItem:
+				usedIM[v.rId] = true
+			}
+		}
+	}
+
+	var b bytes.Buffer
+	b.WriteString(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` + "\n")
+	b.WriteString(`<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">`)
+	for _, hl := range d.hyperlinks {
+		if !usedHL[hl.rId] {
+			continue
+		}
+		fmt.Fprintf(&b,
+			`<Relationship Id="%s" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="%s" TargetMode="External"/>`,
+			hl.rId, xmlAttr(hl.url))
+	}
+	for _, img := range d.images {
+		if !usedIM[img.rId] {
+			continue
+		}
+		fmt.Fprintf(&b,
+			`<Relationship Id="%s" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/%s"/>`,
+			img.rId, filepath.Base(img.partName))
+	}
+	b.WriteString(`</Relationships>`)
+	return b.Bytes(), nil
+}
+
 // ── XML element writers ───────────────────────────────────────────────────────
 
 func writePara(b *bytes.Buffer, p *Para) {
 	b.WriteString(`<w:p>`)
 
 	// Paragraph properties
-	needPPr := p.style != "" || p.numID > 0 || p.blockquoteDepth > 0 || p.hrule
+	needPPr := p.style != "" || p.numID > 0 || p.blockquoteDepth > 0 || p.hrule || p.align != AlignDefault
 	if needPPr {
 		b.WriteString(`<w:pPr>`)
 		if p.style != "" {
@@ -637,6 +757,14 @@ func writePara(b *bytes.Buffer, p *Para) {
 		}
 		if p.hrule {
 			b.WriteString(`<w:pBdr><w:bottom w:val="single" w:sz="6" w:space="1" w:color="AAAAAA"/></w:pBdr>`)
+		}
+		switch p.align {
+		case AlignLeft:
+			b.WriteString(`<w:jc w:val="left"/>`)
+		case AlignCenter:
+			b.WriteString(`<w:jc w:val="center"/>`)
+		case AlignRight:
+			b.WriteString(`<w:jc w:val="right"/>`)
 		}
 		b.WriteString(`</w:pPr>`)
 	}
@@ -706,16 +834,20 @@ func writeImageRun(b *bytes.Buffer, img imageItem) {
 	var alt bytes.Buffer
 	_ = xml.EscapeText(&alt, []byte(img.altText))
 	altS := alt.String()
+	id := img.drawingID
+	if id < 1 {
+		id = 1
+	}
 
 	fmt.Fprintf(b,
 		`<w:r><w:rPr/><w:drawing>`+
 			`<wp:inline>`+
 			`<wp:extent cx="%d" cy="%d"/>`+
-			`<wp:docPr id="1" name="Image" descr="%s"/>`+
+			`<wp:docPr id="%d" name="Image%d" descr="%s"/>`+
 			`<a:graphic>`+
 			`<a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">`+
 			`<pic:pic>`+
-			`<pic:nvPicPr><pic:cNvPr id="1" name="Image" descr="%s"/><pic:cNvPicPr/></pic:nvPicPr>`+
+			`<pic:nvPicPr><pic:cNvPr id="%d" name="Image%d" descr="%s"/><pic:cNvPicPr/></pic:nvPicPr>`+
 			`<pic:blipFill>`+
 			`<a:blip r:embed="%s"/>`+
 			`<a:stretch><a:fillRect/></a:stretch>`+
@@ -726,7 +858,7 @@ func writeImageRun(b *bytes.Buffer, img imageItem) {
 			`</pic:spPr>`+
 			`</pic:pic></a:graphicData></a:graphic>`+
 			`</wp:inline></w:drawing></w:r>`,
-		img.widthEMU, img.heightEMU, altS, altS, img.rId, img.widthEMU, img.heightEMU)
+		img.widthEMU, img.heightEMU, id, id, altS, id, id, altS, img.rId, img.widthEMU, img.heightEMU)
 }
 
 func writeTable(b *bytes.Buffer, t *Table) {
@@ -770,7 +902,12 @@ func xmlAttr(s string) string {
 }
 
 func writeEntry(zw *zip.Writer, name string, data []byte) error {
-	w, err := zw.Create(name)
+	h := &zip.FileHeader{
+		Name:     name,
+		Method:   zip.Deflate,
+		Modified: fixedZipTime,
+	}
+	w, err := zw.CreateHeader(h)
 	if err != nil {
 		return fmt.Errorf("zip entry %q: %w", name, err)
 	}
@@ -808,6 +945,7 @@ type imageItem struct {
 	altText   string
 	widthEMU  int64
 	heightEMU int64
+	drawingID int
 }
 
 type footnoteRefItem struct{ id int }

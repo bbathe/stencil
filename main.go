@@ -18,6 +18,8 @@ const usage = `stencil — convert GitHub Flavored Markdown to .docx
 Usage:
   stencil [flags] INPUT.md
   stencil INPUT.md [flags]
+  stencil -                              # read stdin, write stdout
+  stencil - -output out.docx             # read stdin, write file
 
 Flags:
 `
@@ -35,8 +37,8 @@ func main() {
 		showVersion  bool
 	)
 
-	flag.StringVar(&templatePath, "template", "", "path to reference .docx (borrows styles)")
-	flag.StringVar(&outputPath, "output", "", "output path (default: input with .docx extension)")
+	flag.StringVar(&templatePath, "template", "", "path to reference .docx (borrows styles.xml only)")
+	flag.StringVar(&outputPath, "output", "", "output path (default: input with .docx extension; \"-\" for stdout)")
 	flag.StringVar(&styleMapPath, "style-map", "", "path to JSON style-map file")
 	flag.BoolVar(&showVersion, "version", false, "print version and exit")
 
@@ -64,11 +66,18 @@ func main() {
 	inputPath := args[0]
 
 	if outputPath == "" {
-		outputPath = replaceExt(inputPath, ".docx")
-	} else {
+		if inputPath == "-" {
+			outputPath = "-"
+		} else {
+			outputPath = replaceExt(inputPath, ".docx")
+		}
+	} else if outputPath != "-" {
 		// If --output is a directory, place the .docx inside it.
 		if fi, err := os.Stat(outputPath); err == nil && fi.IsDir() {
-			base := replaceExt(filepath.Base(inputPath), ".docx")
+			base := "stdin.docx"
+			if inputPath != "-" {
+				base = replaceExt(filepath.Base(inputPath), ".docx")
+			}
 			outputPath = filepath.Join(outputPath, base)
 		} else if !strings.HasSuffix(strings.ToLower(outputPath), ".docx") {
 			// Ensure the output always ends in .docx.
@@ -88,7 +97,9 @@ func main() {
 		os.Exit(1)
 	}
 
-	fmt.Printf("wrote %s\n", outputPath)
+	if outputPath != "-" {
+		fmt.Printf("wrote %s\n", outputPath)
+	}
 }
 
 // splitArgs separates flag arguments from positional arguments so that
@@ -113,6 +124,13 @@ func splitArgs(args []string) (flags, positional []string) {
 
 		if !strings.HasPrefix(arg, "-") {
 			// Plain positional argument.
+			positional = append(positional, arg)
+			i++
+			continue
+		}
+
+		// Bare "-" is stdin, not a flag.
+		if arg == "-" {
 			positional = append(positional, arg)
 			i++
 			continue
