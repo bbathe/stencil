@@ -22,6 +22,20 @@ func TestDeterministicWrite(t *testing.T) {
 	}
 }
 
+func TestCorePropsNoAuthor(t *testing.T) {
+	d := New()
+	data, err := d.coreProps()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(data, []byte("dc:creator")) || bytes.Contains(data, []byte("lastModifiedBy")) {
+		t.Fatalf("core props should omit author fields:\n%s", data)
+	}
+	if !bytes.Contains(data, []byte("dcterms:created")) || !bytes.Contains(data, []byte("dcterms:modified")) {
+		t.Fatalf("core props should keep fixed dates:\n%s", data)
+	}
+}
+
 func TestOrderedListStart(t *testing.T) {
 	d := New()
 	id := d.NewOrderedNumID(5)

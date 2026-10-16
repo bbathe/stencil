@@ -522,15 +522,14 @@ func (d *Document) rootRels() ([]byte, error) {
 }
 
 func (d *Document) coreProps() ([]byte, error) {
+	// Creator / lastModifiedBy omitted (optional in OPC). Fixed timestamps keep
+	// package bytes deterministic without attributing authorship.
 	ts := fixedZipTime.Format(time.RFC3339)
 	return fmt.Appendf(nil, `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <cp:coreProperties
     xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties"
-    xmlns:dc="http://purl.org/dc/elements/1.1/"
     xmlns:dcterms="http://purl.org/dc/terms/"
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
-  <dc:creator>stencil</dc:creator>
-  <cp:lastModifiedBy>stencil</cp:lastModifiedBy>
   <dcterms:created xsi:type="dcterms:W3CDTF">%s</dcterms:created>
   <dcterms:modified xsi:type="dcterms:W3CDTF">%s</dcterms:modified>
 </cp:coreProperties>`, ts, ts), nil
