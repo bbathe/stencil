@@ -316,29 +316,52 @@ func (p *Para) AddFormattedRun(text string, bold, italic, strike bool) {
 	p.addRun(textRun{text: text, bold: bold, italic: italic, strike: strike})
 }
 
-// AddBreak adds a hard line-break to the most recent run.
+// AddBreak adds a hard line-break to the most recent run (plain or hyperlink).
 func (p *Para) AddBreak() {
 	if len(p.items) == 0 {
-		p.items = append(p.items, textRun{})
+		p.items = append(p.items, textRun{hardBreak: true})
 		return
 	}
-	if r, ok := p.items[len(p.items)-1].(textRun); ok {
+	switch r := p.items[len(p.items)-1].(type) {
+	case textRun:
 		r.hardBreak = true
+		p.items[len(p.items)-1] = r
+	case hyperlinkItem:
+		if len(r.runs) == 0 {
+			r.runs = append(r.runs, textRun{hardBreak: true, underline: true, color: "0563C1"})
+		} else {
+			last := r.runs[len(r.runs)-1]
+			last.hardBreak = true
+			r.runs[len(r.runs)-1] = last
+		}
 		p.items[len(p.items)-1] = r
 	}
 }
 
 // AddHyperlinkRun appends a hyperlink run.  bold/italic/strike carry through
-// from the surrounding emphasis context.
+// from the surrounding emphasis context (including formatting inside the link).
 func (p *Para) AddHyperlinkRun(text, rId string, bold, italic, strike bool) {
-	r := textRun{
+	p.addHyperlinkRun(rId, textRun{
 		text:      text,
 		bold:      bold,
 		italic:    italic,
 		strike:    strike,
 		underline: true,
 		color:     "0563C1",
-	}
+	})
+}
+
+// AddHyperlinkCodeRun appends a monospace hyperlink run (code span inside a link).
+func (p *Para) AddHyperlinkCodeRun(text, rId string) {
+	p.addHyperlinkRun(rId, textRun{
+		text:      text,
+		code:      true,
+		underline: true,
+		color:     "0563C1",
+	})
+}
+
+func (p *Para) addHyperlinkRun(rId string, r textRun) {
 	// Coalesce consecutive runs with the same rId into one hyperlinkItem.
 	if n := len(p.items); n > 0 {
 		if hl, ok := p.items[n-1].(hyperlinkItem); ok && hl.rId == rId {

@@ -5,6 +5,7 @@ package renderer
 import (
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 
 	"github.com/yuin/goldmark/ast"
@@ -61,6 +62,7 @@ func build(doc *parser.Document, templatePath, baseDir string, sm *stylemap.Styl
 		styleMap:           sm,
 		footnoteIDs:        make(map[int]int),
 		footnoteParagraphs: make(map[int]*docx.Para),
+		unknownKinds:       make(map[string]bool),
 	}
 
 	// Pre-walk: register all footnote definitions so that inline FootnoteLink
@@ -69,6 +71,9 @@ func build(doc *parser.Document, templatePath, baseDir string, sm *stylemap.Styl
 
 	if err := ast.Walk(doc.Node, wk.visit); err != nil {
 		return nil, fmt.Errorf("walking AST: %w", err)
+	}
+	if err := wk.errUnknown(); err != nil {
+		return nil, err
 	}
 	return d, nil
 }
@@ -119,6 +124,26 @@ type walker struct {
 	// currentPara is redirected to the footnote Para; savedPara restores it on exit.
 	inFootnote bool
 	savedPara  *docx.Para
+
+	// linkRId is set while walking the children of a Link so inline runs
+	// (including nested emphasis/code) are emitted inside the hyperlink.
+	linkRId   string
+	linkDepth int
+
+	// unknownKinds records AST node kinds with no handler (silent loss guard).
+	unknownKinds map[string]bool
+}
+
+func (w *walker) errUnknown() error {
+	if len(w.unknownKinds) == 0 {
+		return nil
+	}
+	kinds := make([]string, 0, len(w.unknownKinds))
+	for k := range w.unknownKinds {
+		kinds = append(kinds, k)
+	}
+	sort.Strings(kinds)
+	return fmt.Errorf("unhandled markdown nodes: %s", strings.Join(kinds, ", "))
 }
 
 func (w *walker) listDepth() int { return len(w.listNumIDs) }
@@ -165,6 +190,10 @@ func (w *walker) visit(node ast.Node, entering bool) (ast.WalkStatus, error) {
 
 	case *ast.Document:
 		// nothing
+
+	// TextBlock wraps inlines in tight list items and similar contexts.
+	case *ast.TextBlock:
+		// Fall through — process children via ensureCurrentPara on first inline.
 
 	// ── Headings ─────────────────────────────────────────────────────────────
 
@@ -414,26 +443,34 @@ func (w *walker) visit(node ast.Node, entering bool) (ast.WalkStatus, error) {
 		if entering {
 			w.ensureCurrentPara()
 			if w.currentPara != nil {
-				w.currentPara.AddCodeRun(string(n.Text(w.source)))
+				text := string(n.Text(w.source))
+				if w.linkRId != "" {
+					w.currentPara.AddHyperlinkCodeRun(text, w.linkRId)
+				} else {
+					w.currentPara.AddCodeRun(text)
+				}
 			}
 		}
 		return ast.WalkSkipChildren, nil
 
 	// ── Inline: hyperlink ────────────────────────────────────────────────────
+	//
+	// Walk children so emphasis/code/strike inside the link label are preserved
+	// (e.g. [**bold**](url), [`code`](url)).
 
 	case *ast.Link:
 		if entering {
 			w.ensureCurrentPara()
-			if w.currentPara != nil {
-				url := string(n.Destination)
-				rId := w.doc.RegisterHyperlink(url)
-				w.currentPara.AddHyperlinkRun(
-					extractText(n, w.source), rId,
-					w.boldCount > 0, w.italicCount > 0, w.strikeCount > 0,
-				)
+			if w.currentPara != nil && w.linkDepth == 0 {
+				w.linkRId = w.doc.RegisterHyperlink(string(n.Destination))
+			}
+			w.linkDepth++
+		} else {
+			w.linkDepth--
+			if w.linkDepth == 0 {
+				w.linkRId = ""
 			}
 		}
-		return ast.WalkSkipChildren, nil
 
 	// ── Inline: autolink <https://…> ─────────────────────────────────────────
 
@@ -456,12 +493,20 @@ func (w *walker) visit(node ast.Node, entering bool) (ast.WalkStatus, error) {
 			if w.currentPara != nil {
 				dest := string(n.Destination)
 				altText := extractText(n, w.source)
+				if altText == "" {
+					altText = dest
+				}
+				// Linked images ([![alt](img)](url)): emit alt as hyperlink text.
+				if w.linkRId != "" {
+					w.currentPara.AddHyperlinkRun(
+						altText, w.linkRId,
+						w.boldCount > 0, w.italicCount > 0, w.strikeCount > 0,
+					)
+					return ast.WalkSkipChildren, nil
+				}
 				path := w.doc.ResolveImagePath(dest)
 				rId, imgW, imgH, drawingID, regErr := w.doc.RegisterImage(path)
 				if regErr != nil {
-					if altText == "" {
-						altText = dest
-					}
 					w.currentPara.AddItalicRun(fmt.Sprintf("[image: %s]", altText))
 				} else {
 					w.currentPara.AddImageItem(rId, altText, imgW, imgH, drawingID)
@@ -522,6 +567,15 @@ func (w *walker) visit(node ast.Node, entering bool) (ast.WalkStatus, error) {
 			w.currentPara = w.savedPara
 			w.inFootnote = false
 		}
+
+	// HTML footnote back-references are not used in Word footnotes.
+	case *extast.FootnoteBacklink:
+		return ast.WalkSkipChildren, nil
+
+	default:
+		if entering {
+			w.unknownKinds[node.Kind().String()] = true
+		}
 	}
 
 	return ast.WalkContinue, nil
@@ -530,12 +584,18 @@ func (w *walker) visit(node ast.Node, entering bool) (ast.WalkStatus, error) {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 // addStyledRun appends a run to currentPara using the current inline
-// formatting counters to determine bold/italic/strike.
+// formatting counters to determine bold/italic/strike. Inside a Link, runs
+// are emitted as hyperlink runs so label formatting is preserved.
 func (w *walker) addStyledRun(t string) {
 	if w.currentPara == nil || t == "" {
 		return
 	}
-	w.currentPara.AddFormattedRun(t, w.boldCount > 0, w.italicCount > 0, w.strikeCount > 0)
+	bold, italic, strike := w.boldCount > 0, w.italicCount > 0, w.strikeCount > 0
+	if w.linkRId != "" {
+		w.currentPara.AddHyperlinkRun(t, w.linkRId, bold, italic, strike)
+		return
+	}
+	w.currentPara.AddFormattedRun(t, bold, italic, strike)
 }
 
 // extractText recursively collects the plain-text content of an AST subtree.

@@ -69,7 +69,7 @@ Keys are fixed; values map to whatever your template calls the style.
 - Task list checkboxes (`- [x]` / `- [ ]`)
 - Tables (GFM), including column alignment
 - Horizontal rules
-- Hyperlinks and autolinks
+- Hyperlinks and autolinks (emphasis, strikethrough, and code spans inside link labels are preserved)
 - Local images (PNG, JPEG, GIF, WebP); paths resolve relative to the Markdown file
 - Footnotes (with inline formatting — bold, italic, links — in the footnote body)
 - Inline and block raw HTML (tags stripped, text preserved)

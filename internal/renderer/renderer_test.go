@@ -10,6 +10,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/yuin/goldmark"
+	"github.com/yuin/goldmark/extension"
+	"github.com/yuin/goldmark/text"
+
 	"github.com/bbathe/stencil/internal/parser"
 	"github.com/bbathe/stencil/internal/renderer"
 	"github.com/bbathe/stencil/internal/stylemap"
@@ -149,6 +153,53 @@ func TestRemoteImageFallsBack(t *testing.T) {
 	docXML := string(parts["word/document.xml"])
 	if !strings.Contains(docXML, "[image:") {
 		t.Fatalf("expected alt-text fallback, got:\n%s", docXML)
+	}
+}
+
+func TestRichTextInsideLinks(t *testing.T) {
+	md := "See [**bold** and `code` and ~~x~~](https://example.com/path).\n"
+	doc, err := parser.Parse([]byte(md))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sm, _ := stylemap.Load("")
+	var buf bytes.Buffer
+	if err := renderer.RenderTo(doc, &buf, "", "", sm); err != nil {
+		t.Fatal(err)
+	}
+	docXML := string(unzip(t, buf.Bytes())["word/document.xml"])
+	if !strings.Contains(docXML, `<w:hyperlink r:id="`) {
+		t.Fatal("missing hyperlink")
+	}
+	// Bold/strike/code must appear inside the hyperlink element.
+	i := strings.Index(docXML, `<w:hyperlink`)
+	j := strings.Index(docXML[i:], `</w:hyperlink>`)
+	if i < 0 || j < 0 {
+		t.Fatal("hyperlink bounds missing")
+	}
+	inner := docXML[i : i+j]
+	for _, needle := range []string{`<w:b/>`, `<w:strike/>`, `Courier New`} {
+		if !strings.Contains(inner, needle) {
+			t.Errorf("hyperlink missing %q in:\n%s", needle, inner)
+		}
+	}
+}
+
+func TestUnhandledNodeErrors(t *testing.T) {
+	// Definition lists are not part of GFM / stencil's parser, but if they
+	// appear in the AST the renderer must fail instead of dropping them.
+	src := []byte("Term\n: Definition\n")
+	md := goldmark.New(goldmark.WithExtensions(extension.DefinitionList))
+	node := md.Parser().Parse(text.NewReader(src))
+	doc := &parser.Document{Node: node, Source: src}
+	sm, _ := stylemap.Load("")
+	var buf bytes.Buffer
+	err := renderer.RenderTo(doc, &buf, "", "", sm)
+	if err == nil {
+		t.Fatal("expected error for unhandled definition-list nodes")
+	}
+	if !strings.Contains(err.Error(), "unhandled markdown nodes") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
