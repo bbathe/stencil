@@ -5,7 +5,6 @@ import (
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/ast"
 	"github.com/yuin/goldmark/extension"
-	"github.com/yuin/goldmark/parser"
 	"github.com/yuin/goldmark/text"
 )
 
@@ -16,17 +15,12 @@ type Document struct {
 	Source []byte
 }
 
-// Parse parses GFM markdown source and returns a Document.
-// It enables the GFM extension (tables, strikethrough, task lists, linkify)
-// and sets the paragraph transformer so blank-line handling is correct.
+// Parse parses GFM markdown source (plus footnotes) and returns a Document.
 func Parse(src []byte) (*Document, error) {
 	md := goldmark.New(
 		goldmark.WithExtensions(
 			extension.GFM,
 			extension.Footnote,
-		),
-		goldmark.WithParserOptions(
-			parser.WithAutoHeadingID(),
 		),
 	)
 

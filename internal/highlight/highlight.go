@@ -139,18 +139,10 @@ var languages = map[string]langConfig{
 			{"'", "'", `\`, false},
 		},
 	},
-	"c":   cLang(),
-	"cpp": cppLang(),
-	"c++": cppLang(),
-	"bash": {
-		keywords:     kwset("if", "then", "else", "elif", "fi", "for", "while", "do", "done", "case", "esac", "in", "function", "return", "local", "export", "readonly", "declare", "unset", "shift", "source", "break", "continue"),
-		builtins:     kwset("echo", "printf", "read", "cd", "pwd", "ls", "mkdir", "rm", "cp", "mv", "cat", "grep", "sed", "awk", "find", "chmod", "chown", "exit", "test", "true", "false", "set", "unset", "exec"),
-		lineComments: []string{"#"},
-		stringDelims: []strDelim{
-			{`"`, `"`, `\`, false},
-			{"'", "'", "", false},
-		},
-	},
+	"c":     cLang(),
+	"cpp":   cppLang(),
+	"c++":   cppLang(),
+	"bash":  bashLang(),
 	"sh":    bashLang(),
 	"shell": bashLang(),
 	"json": {

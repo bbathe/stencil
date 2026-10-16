@@ -62,13 +62,13 @@ func TestGoldenFeatures(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	if err := renderer.RenderTo(doc, &buf, "", dir, sm); err != nil {
+	if err := renderer.RenderTo(doc, &buf, renderer.Options{BaseDir: dir, StyleMap: sm}); err != nil {
 		t.Fatal(err)
 	}
 
 	// Determinism: second render must match.
 	var buf2 bytes.Buffer
-	if err := renderer.RenderTo(doc, &buf2, "", dir, sm); err != nil {
+	if err := renderer.RenderTo(doc, &buf2, renderer.Options{BaseDir: dir, StyleMap: sm}); err != nil {
 		t.Fatal(err)
 	}
 	if !bytes.Equal(buf.Bytes(), buf2.Bytes()) {
@@ -82,8 +82,8 @@ func TestGoldenFeatures(t *testing.T) {
 	fnRels := string(parts["word/_rels/footnotes.xml.rels"])
 
 	checks := []struct {
-		name string
-		hay  string
+		name   string
+		hay    string
 		needle string
 	}{
 		{"heading style", docXML, `w:pStyle w:val="Heading1"`},
@@ -125,7 +125,7 @@ func TestImageRelativeToBaseDir(t *testing.T) {
 	}
 	sm, _ := stylemap.Load("")
 	out := filepath.Join(dir, "out.docx")
-	if err := renderer.Render(doc, out, "", dir, sm); err != nil {
+	if err := renderer.Render(doc, out, renderer.Options{BaseDir: dir, StyleMap: sm}); err != nil {
 		t.Fatal(err)
 	}
 	data, err := os.ReadFile(out)
@@ -146,7 +146,7 @@ func TestRemoteImageFallsBack(t *testing.T) {
 	}
 	sm, _ := stylemap.Load("")
 	var buf bytes.Buffer
-	if err := renderer.RenderTo(doc, &buf, "", "", sm); err != nil {
+	if err := renderer.RenderTo(doc, &buf, renderer.Options{StyleMap: sm}); err != nil {
 		t.Fatal(err)
 	}
 	parts := unzip(t, buf.Bytes())
@@ -164,7 +164,7 @@ func TestRichTextInsideLinks(t *testing.T) {
 	}
 	sm, _ := stylemap.Load("")
 	var buf bytes.Buffer
-	if err := renderer.RenderTo(doc, &buf, "", "", sm); err != nil {
+	if err := renderer.RenderTo(doc, &buf, renderer.Options{StyleMap: sm}); err != nil {
 		t.Fatal(err)
 	}
 	docXML := string(unzip(t, buf.Bytes())["word/document.xml"])
@@ -194,7 +194,7 @@ func TestUnhandledNodeErrors(t *testing.T) {
 	doc := &parser.Document{Node: node, Source: src}
 	sm, _ := stylemap.Load("")
 	var buf bytes.Buffer
-	err := renderer.RenderTo(doc, &buf, "", "", sm)
+	err := renderer.RenderTo(doc, &buf, renderer.Options{StyleMap: sm})
 	if err == nil {
 		t.Fatal("expected error for unhandled definition-list nodes")
 	}

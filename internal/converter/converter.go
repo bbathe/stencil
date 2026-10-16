@@ -40,14 +40,20 @@ func Run(opts Options) error {
 		return fmt.Errorf("parsing markdown: %w", err)
 	}
 
+	ropts := renderer.Options{
+		TemplatePath: opts.TemplatePath,
+		BaseDir:      baseDir,
+		StyleMap:     sm,
+	}
+
 	if opts.OutputPath == "-" {
-		if err := renderer.RenderTo(doc, os.Stdout, opts.TemplatePath, baseDir, sm); err != nil {
+		if err := renderer.RenderTo(doc, os.Stdout, ropts); err != nil {
 			return fmt.Errorf("rendering docx: %w", err)
 		}
 		return nil
 	}
 
-	if err := renderer.Render(doc, opts.OutputPath, opts.TemplatePath, baseDir, sm); err != nil {
+	if err := renderer.Render(doc, opts.OutputPath, ropts); err != nil {
 		return fmt.Errorf("rendering docx: %w", err)
 	}
 
