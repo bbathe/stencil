@@ -60,6 +60,19 @@ func TestEqualColumnWidths(t *testing.T) {
 	}
 }
 
+func TestDefaultStylesUseNamedFonts(t *testing.T) {
+	styles := defaultStyles()
+	if bytes.Contains(styles, []byte("Theme")) || bytes.Contains(styles, []byte("asciiTheme")) {
+		t.Fatal("built-in styles must not use theme font references")
+	}
+	if !bytes.Contains(styles, []byte(`w:ascii="Arial"`)) {
+		t.Fatal("expected Arial as default body font")
+	}
+	if !bytes.Contains(styles, []byte(`w:ascii="Courier New"`)) {
+		t.Fatal("expected Courier New for Code style")
+	}
+}
+
 func TestCorePropsNoAuthor(t *testing.T) {
 	d := New()
 	data, err := d.coreProps()

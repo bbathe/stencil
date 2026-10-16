@@ -7,7 +7,9 @@ func defaultStyles() []byte {
 <w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
   <w:docDefaults>
     <w:rPrDefault><w:rPr>
-      <w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi"/>
+      <!-- Named fonts (not theme refs) so Word and LibreOffice resolve
+           predictably. LibreOffice maps Arial → Liberation Sans when needed. -->
+      <w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/>
       <w:sz w:val="24"/><w:szCs w:val="24"/>
     </w:rPr></w:rPrDefault>
   </w:docDefaults>
@@ -55,7 +57,7 @@ func defaultStyles() []byte {
       <w:spacing w:after="0"/>
     </w:pPr>
     <w:rPr>
-      <w:rFonts w:ascii="Courier New" w:hAnsi="Courier New"/>
+      <w:rFonts w:ascii="Courier New" w:hAnsi="Courier New" w:cs="Courier New"/>
       <w:sz w:val="20"/><w:szCs w:val="20"/>
     </w:rPr>
   </w:style>

@@ -421,7 +421,7 @@ func writeRun(b *bytes.Buffer, r textRun, forceBold bool) {
 			fmt.Fprintf(b, `<w:color w:val="%s"/>`, r.color)
 		}
 		if r.code {
-			b.WriteString(`<w:rFonts w:ascii="Courier New" w:hAnsi="Courier New"/>`)
+			b.WriteString(`<w:rFonts w:ascii="Courier New" w:hAnsi="Courier New" w:cs="Courier New"/>`)
 			b.WriteString(`<w:sz w:val="20"/>`)
 		}
 		b.WriteString(`</w:rPr>`)
