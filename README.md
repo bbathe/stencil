@@ -67,7 +67,7 @@ Defaults without `-style`:
 
 ## PDF output
 
-`-output file.pdf` writes a PDF with a small hand-rolled writer (no Office, no external tools). Layout is simple GFM: headings, paragraphs, lists, tables, code blocks, quotes, rules, links as text, images as `[image: …]` placeholders, footnotes as an end Notes section. Unicode outside WinAnsi becomes `?`.
+`-output file.pdf` writes a PDF with a small hand-rolled writer (no Office, no external tools). Layout is simple GFM: headings, paragraphs, lists, tables, code blocks, quotes, rules, images as `[image: …]` placeholders, footnotes as an end Notes section. Web links (`http`/`https`/`mailto`, and `www.…`) become clickable URI annotations; relative paths are plain text only (so viewers do not open them as local files). Unicode outside WinAnsi becomes `?`.
 
 ## What it converts
 

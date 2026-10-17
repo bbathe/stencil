@@ -52,7 +52,7 @@ func RenderTo(doc *parser.Document, w io.Writer, opts Options) error {
 		return err
 	}
 	r.emitFootnotes()
-	return writePDF(w, r.canvas.contentPages())
+	return writePDF(w, r.canvas.contentPages(), r.canvas.pageAnnots())
 }
 
 type walker struct {
@@ -63,6 +63,9 @@ type walker struct {
 	boldCount   int
 	italicCount int
 	strikeCount int
+
+	linkURI   string // absolute URI while inside a Link
+	linkDepth int
 
 	listStack       []listState
 	listItemDepth   int
@@ -332,11 +335,26 @@ func (w *walker) visit(node ast.Node, entering bool) (ast.WalkStatus, error) {
 		return ast.WalkSkipChildren, nil
 
 	case *ast.Link:
-		// Label text walked as children; no special URL emission in v1.
+		if entering {
+			if w.linkDepth == 0 {
+				w.linkURI = absoluteURI(string(n.Destination))
+			}
+			w.linkDepth++
+		} else {
+			w.linkDepth--
+			if w.linkDepth == 0 {
+				w.linkURI = ""
+			}
+		}
 
 	case *ast.AutoLink:
 		if entering {
-			w.addText(string(n.URL(w.source)))
+			url := string(n.URL(w.source))
+			uri := absoluteURI(url)
+			saved := w.linkURI
+			w.linkURI = uri
+			w.addText(url)
+			w.linkURI = saved
 		}
 		return ast.WalkSkipChildren, nil
 
@@ -436,7 +454,35 @@ func (w *walker) addSpan(t string, f fontID, size float64, strike bool) {
 	if !w.inPara && w.listItemDepth == 0 {
 		w.beginBlock()
 	}
-	w.spans = append(w.spans, textSpan{text: t, font: f, size: size, strike: strike})
+	w.spans = append(w.spans, textSpan{
+		text: t, font: f, size: size, strike: strike, uri: w.linkURI,
+	})
+}
+
+// absoluteURI returns a URI safe for PDF /URI actions. Relative paths are
+// rejected (empty) so viewers do not open them as local files. Bare www.
+// hosts and scheme-relative URLs are normalized to https.
+func absoluteURI(dest string) string {
+	dest = strings.TrimSpace(dest)
+	if dest == "" {
+		return ""
+	}
+	lower := strings.ToLower(dest)
+	switch {
+	case strings.HasPrefix(lower, "https://"),
+		strings.HasPrefix(lower, "http://"),
+		strings.HasPrefix(lower, "mailto:"):
+		return dest
+	case strings.HasPrefix(dest, "//"):
+		return "https:" + dest
+	case strings.HasPrefix(lower, "www."):
+		return "https://" + dest
+	case strings.Contains(dest, "://"):
+		// Other absolute schemes (rare in GFM); pass through.
+		return dest
+	default:
+		return ""
+	}
 }
 
 func (w *walker) emitFootnotes() {

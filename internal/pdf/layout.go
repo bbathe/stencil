@@ -21,8 +21,15 @@ const (
 	fontMono    fontID = "F4"
 )
 
+// linkAnnot is a clickable URI rectangle on a page (PDF user space).
+type linkAnnot struct {
+	x1, y1, x2, y2 float64
+	uri            string
+}
+
 type canvas struct {
 	pages   []strings.Builder
+	annots  [][]linkAnnot // parallel to pages
 	cur     *strings.Builder
 	y       float64
 	xLeft   float64
@@ -56,6 +63,7 @@ func newCanvas(th *theme.Theme) *canvas {
 
 func (c *canvas) newPage() {
 	c.pages = append(c.pages, strings.Builder{})
+	c.annots = append(c.annots, nil)
 	c.cur = &c.pages[len(c.pages)-1]
 	c.y = pageH - c.marginT
 }
@@ -81,6 +89,10 @@ func (c *canvas) contentPages() []string {
 	return out
 }
 
+func (c *canvas) pageAnnots() [][]linkAnnot {
+	return c.annots
+}
+
 func (c *canvas) widthsFor(f fontID) *[256]int {
 	switch f {
 	case fontBold:
@@ -102,6 +114,7 @@ type textSpan struct {
 	font   fontID
 	size   float64
 	strike bool
+	uri    string // absolute http(s)/mailto URI for link annotations; empty = none
 }
 
 type piece struct {
@@ -109,6 +122,7 @@ type piece struct {
 	size   float64
 	text   string
 	strike bool
+	uri    string
 }
 
 func flattenSpans(spans []textSpan, defaultSize float64) []piece {
@@ -124,7 +138,7 @@ func flattenSpans(spans []textSpan, defaultSize float64) []piece {
 		s := sp.text
 		for len(s) > 0 {
 			if s[0] == ' ' || s[0] == '\t' || s[0] == '\n' {
-				out = append(out, piece{sp.font, size, " ", sp.strike})
+				out = append(out, piece{sp.font, size, " ", sp.strike, sp.uri})
 				s = s[1:]
 				continue
 			}
@@ -132,7 +146,7 @@ func flattenSpans(spans []textSpan, defaultSize float64) []piece {
 			for i < len(s) && s[i] != ' ' && s[i] != '\t' && s[i] != '\n' {
 				i++
 			}
-			out = append(out, piece{sp.font, size, s[:i], sp.strike})
+			out = append(out, piece{sp.font, size, s[:i], sp.strike, sp.uri})
 			s = s[i:]
 		}
 	}
@@ -187,8 +201,27 @@ func (c *canvas) emitLine(x float64, line []piece) {
 	fmt.Fprintf(c.cur, "BT\n%.2f %.2f Td\n", x, c.y)
 	for _, p := range line {
 		enc := pdfEncode(p.text)
+		if p.uri != "" {
+			// Blue link text (RGB).
+			c.cur.WriteString("0 0.1 0.8 rg\n")
+		}
 		fmt.Fprintf(c.cur, "/%s %.2f Tf\n(%s) Tj\n", p.font, p.size, enc)
+		if p.uri != "" {
+			c.cur.WriteString("0 0 0 rg\n")
+		}
 		w := c.measure(p.font, p.size, p.text)
+		if p.uri != "" {
+			pi := len(c.pages) - 1
+			c.annots[pi] = append(c.annots[pi], linkAnnot{
+				x1: x, y1: c.y - 2, x2: x + w, y2: c.y + p.size*0.2,
+				uri: p.uri,
+			})
+			// Underline
+			fmt.Fprintf(c.cur, "ET\n0 0.1 0.8 RG\n0.5 w\n%.2f %.2f m %.2f %.2f l S\n0 0 0 RG\nBT\n%.2f %.2f Td\n",
+				x, c.y-1, x+w, c.y-1, x+w, c.y)
+			x += w
+			continue
+		}
 		if p.strike {
 			y := c.y + p.size*0.3
 			fmt.Fprintf(c.cur, "ET\n%.2f %.2f m %.2f %.2f l S\nBT\n%.2f %.2f Td\n",

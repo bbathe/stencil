@@ -63,6 +63,35 @@ A footnote[^1].
 	}
 }
 
+func TestPDFLinkURIAbsolute(t *testing.T) {
+	src := []byte(`[Go](https://go.dev) and <https://example.com/a> and [rel](./local.md) and [www](www.example.org/x)
+`)
+	doc, err := parser.Parse(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	if err := pdf.RenderTo(doc, &buf, pdf.Options{}); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "/Subtype /Link") {
+		t.Fatal("missing Link annot")
+	}
+	if !strings.Contains(out, "/URI (https://go.dev)") {
+		t.Fatalf("missing absolute URI for markdown link: %s", out)
+	}
+	if !strings.Contains(out, "/URI (https://example.com/a)") {
+		t.Fatal("missing autolink URI")
+	}
+	if !strings.Contains(out, "/URI (https://www.example.org/x)") {
+		t.Fatal("missing www → https URI")
+	}
+	if strings.Contains(out, "/URI (./local.md)") || strings.Contains(out, "local.md)") {
+		t.Fatal("relative link must not get a URI annot")
+	}
+}
+
 func TestRenderFile(t *testing.T) {
 	dir := t.TempDir()
 	out := filepath.Join(dir, "out.pdf")

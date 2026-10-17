@@ -6,11 +6,15 @@ import (
 	"strings"
 )
 
-// writePDF serializes page content streams into a minimal PDF-1.4 file
-// using built-in Helvetica / Helvetica-Bold / Helvetica-Oblique / Courier.
-func writePDF(w io.Writer, pages []string) error {
+// writePDF serializes page content streams and URI link annotations into a
+// minimal PDF-1.4 file using built-in Helvetica / Courier fonts.
+func writePDF(w io.Writer, pages []string, pageAnnots [][]linkAnnot) error {
 	if len(pages) == 0 {
 		pages = []string{""}
+		pageAnnots = [][]linkAnnot{{}}
+	}
+	for len(pageAnnots) < len(pages) {
+		pageAnnots = append(pageAnnots, nil)
 	}
 
 	type deferred struct {
@@ -30,6 +34,28 @@ func writePDF(w io.Writer, pages []string) error {
 	for i := range pages {
 		contentIDs[i] = alloc()
 	}
+
+	// Annot objects (one per link rect).
+	type annotRef struct {
+		page int
+		id   int
+	}
+	var annotRefs []annotRef
+	for pi, links := range pageAnnots {
+		for _, a := range links {
+			if a.uri == "" {
+				continue
+			}
+			id := alloc()
+			annotRefs = append(annotRefs, annotRef{page: pi, id: id})
+			body := fmt.Sprintf(
+				"<< /Type /Annot /Subtype /Link /Rect [%.2f %.2f %.2f %.2f] /Border [0 0 0] /A << /S /URI /URI (%s) >> >>",
+				a.x1, a.y1, a.x2, a.y2, pdfEncode(a.uri),
+			)
+			bodies = append(bodies, deferred{id, body})
+		}
+	}
+
 	pageIDs := make([]int, len(pages))
 	for i := range pages {
 		pageIDs[i] = alloc()
@@ -51,6 +77,12 @@ func writePDF(w io.Writer, pages []string) error {
 	for i, content := range pages {
 		add(contentIDs[i], fmt.Sprintf("<< /Length %d >>\nstream\n%s\nendstream", len(content), content))
 	}
+
+	annotsByPage := make([][]int, len(pages))
+	for _, ar := range annotRefs {
+		annotsByPage[ar.page] = append(annotsByPage[ar.page], ar.id)
+	}
+
 	var kids strings.Builder
 	kids.WriteByte('[')
 	for i, id := range pageIDs {
@@ -58,9 +90,22 @@ func writePDF(w io.Writer, pages []string) error {
 			kids.WriteByte(' ')
 		}
 		fmt.Fprintf(&kids, "%d 0 R", id)
+		annots := ""
+		if ids := annotsByPage[i]; len(ids) > 0 {
+			var b strings.Builder
+			b.WriteString(" /Annots [")
+			for j, aid := range ids {
+				if j > 0 {
+					b.WriteByte(' ')
+				}
+				fmt.Fprintf(&b, "%d 0 R", aid)
+			}
+			b.WriteByte(']')
+			annots = b.String()
+		}
 		add(id, fmt.Sprintf(
-			"<< /Type /Page /Parent %d 0 R /MediaBox [0 0 612 792] /Contents %d 0 R /Resources %s >>",
-			pagesID, contentIDs[i], resources,
+			"<< /Type /Page /Parent %d 0 R /MediaBox [0 0 612 792] /Contents %d 0 R /Resources %s%s >>",
+			pagesID, contentIDs[i], resources, annots,
 		))
 	}
 	kids.WriteByte(']')
