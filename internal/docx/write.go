@@ -129,8 +129,8 @@ func (d *Document) rootRels() ([]byte, error) {
 }
 
 func (d *Document) coreProps() ([]byte, error) {
-	// Creator / lastModifiedBy omitted (optional in OPC). Fixed timestamps keep
-	// package bytes deterministic without attributing authorship.
+	// Creator / modified / lastModifiedBy omitted (optional in OPC). A fixed
+	// created timestamp keeps package bytes deterministic without authorship.
 	ts := fixedZipTime.Format(time.RFC3339)
 	return fmt.Appendf(nil, `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <cp:coreProperties
@@ -138,8 +138,7 @@ func (d *Document) coreProps() ([]byte, error) {
     xmlns:dcterms="http://purl.org/dc/terms/"
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
   <dcterms:created xsi:type="dcterms:W3CDTF">%s</dcterms:created>
-  <dcterms:modified xsi:type="dcterms:W3CDTF">%s</dcterms:modified>
-</cp:coreProperties>`, ts, ts), nil
+</cp:coreProperties>`, ts), nil
 }
 
 func (d *Document) documentRels() ([]byte, error) {

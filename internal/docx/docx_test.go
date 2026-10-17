@@ -111,8 +111,11 @@ func TestCorePropsNoAuthor(t *testing.T) {
 	if bytes.Contains(data, []byte("dc:creator")) || bytes.Contains(data, []byte("lastModifiedBy")) {
 		t.Fatalf("core props should omit author fields:\n%s", data)
 	}
-	if !bytes.Contains(data, []byte("dcterms:created")) || !bytes.Contains(data, []byte("dcterms:modified")) {
-		t.Fatalf("core props should keep fixed dates:\n%s", data)
+	if !bytes.Contains(data, []byte("dcterms:created")) {
+		t.Fatal("missing dcterms:created")
+	}
+	if bytes.Contains(data, []byte("dcterms:modified")) {
+		t.Fatalf("core props should omit modified:\n%s", data)
 	}
 }
 
