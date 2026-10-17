@@ -1,16 +1,33 @@
 package docx
 
-// ── Built-in default styles ───────────────────────────────────────────────────
+import (
+	"fmt"
 
-func defaultStyles() []byte {
-	return []byte(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+	"github.com/bbathe/stencil/internal/theme"
+)
+
+// stylesXML builds word/styles.xml from th.
+func stylesXML(th *theme.Theme) []byte {
+	if th == nil {
+		th = theme.Default()
+	}
+	font := xmlAttr(th.Font)
+	mono := xmlAttr(th.Mono)
+	body := th.BodyHalfPoints()
+	code := th.CodeHalfPoints()
+	h := make([]int, 6)
+	for i := 0; i < 6; i++ {
+		h[i] = th.HeadingHalfPoints(i + 1)
+	}
+
+	return []byte(fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
   <w:docDefaults>
     <w:rPrDefault><w:rPr>
       <!-- Named fonts (not theme refs) so Word and LibreOffice resolve
            predictably. LibreOffice maps Arial → Liberation Sans when needed. -->
-      <w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/>
-      <w:sz w:val="24"/><w:szCs w:val="24"/>
+      <w:rFonts w:ascii="%s" w:hAnsi="%s" w:cs="%s"/>
+      <w:sz w:val="%d"/><w:szCs w:val="%d"/>
     </w:rPr></w:rPrDefault>
   </w:docDefaults>
 
@@ -22,32 +39,32 @@ func defaultStyles() []byte {
   <w:style w:type="paragraph" w:styleId="Heading1">
     <w:name w:val="heading 1"/><w:basedOn w:val="Normal"/>
     <w:pPr><w:outlineLvl w:val="0"/><w:spacing w:before="240" w:after="60"/></w:pPr>
-    <w:rPr><w:b/><w:sz w:val="48"/><w:szCs w:val="48"/></w:rPr>
+    <w:rPr><w:b/><w:sz w:val="%d"/><w:szCs w:val="%d"/></w:rPr>
   </w:style>
   <w:style w:type="paragraph" w:styleId="Heading2">
     <w:name w:val="heading 2"/><w:basedOn w:val="Normal"/>
     <w:pPr><w:outlineLvl w:val="1"/><w:spacing w:before="200" w:after="60"/></w:pPr>
-    <w:rPr><w:b/><w:sz w:val="36"/><w:szCs w:val="36"/></w:rPr>
+    <w:rPr><w:b/><w:sz w:val="%d"/><w:szCs w:val="%d"/></w:rPr>
   </w:style>
   <w:style w:type="paragraph" w:styleId="Heading3">
     <w:name w:val="heading 3"/><w:basedOn w:val="Normal"/>
     <w:pPr><w:outlineLvl w:val="2"/><w:spacing w:before="160" w:after="60"/></w:pPr>
-    <w:rPr><w:b/><w:sz w:val="28"/><w:szCs w:val="28"/></w:rPr>
+    <w:rPr><w:b/><w:sz w:val="%d"/><w:szCs w:val="%d"/></w:rPr>
   </w:style>
   <w:style w:type="paragraph" w:styleId="Heading4">
     <w:name w:val="heading 4"/><w:basedOn w:val="Normal"/>
     <w:pPr><w:outlineLvl w:val="3"/></w:pPr>
-    <w:rPr><w:b/><w:i/><w:sz w:val="24"/></w:rPr>
+    <w:rPr><w:b/><w:i/><w:sz w:val="%d"/></w:rPr>
   </w:style>
   <w:style w:type="paragraph" w:styleId="Heading5">
     <w:name w:val="heading 5"/><w:basedOn w:val="Normal"/>
     <w:pPr><w:outlineLvl w:val="4"/></w:pPr>
-    <w:rPr><w:sz w:val="24"/></w:rPr>
+    <w:rPr><w:sz w:val="%d"/></w:rPr>
   </w:style>
   <w:style w:type="paragraph" w:styleId="Heading6">
     <w:name w:val="heading 6"/><w:basedOn w:val="Normal"/>
     <w:pPr><w:outlineLvl w:val="5"/></w:pPr>
-    <w:rPr><w:i/><w:sz w:val="24"/></w:rPr>
+    <w:rPr><w:i/><w:sz w:val="%d"/></w:rPr>
   </w:style>
 
   <w:style w:type="paragraph" w:styleId="Code">
@@ -57,8 +74,8 @@ func defaultStyles() []byte {
       <w:spacing w:after="0"/>
     </w:pPr>
     <w:rPr>
-      <w:rFonts w:ascii="Courier New" w:hAnsi="Courier New" w:cs="Courier New"/>
-      <w:sz w:val="20"/><w:szCs w:val="20"/>
+      <w:rFonts w:ascii="%s" w:hAnsi="%s" w:cs="%s"/>
+      <w:sz w:val="%d"/><w:szCs w:val="%d"/>
     </w:rPr>
   </w:style>
 
@@ -79,7 +96,7 @@ func defaultStyles() []byte {
   <w:style w:type="paragraph" w:styleId="FootnoteText">
     <w:name w:val="footnote text"/><w:basedOn w:val="Normal"/>
     <w:pPr><w:spacing w:after="0"/></w:pPr>
-    <w:rPr><w:sz w:val="20"/><w:szCs w:val="20"/></w:rPr>
+    <w:rPr><w:sz w:val="%d"/><w:szCs w:val="%d"/></w:rPr>
   </w:style>
 
   <w:style w:type="character" w:styleId="FootnoteReference">
@@ -98,5 +115,11 @@ func defaultStyles() []byte {
       <w:insideV w:val="single" w:sz="4" w:space="0" w:color="000000"/>
     </w:tblBorders></w:tblPr>
   </w:style>
-</w:styles>`)
+</w:styles>`,
+		font, font, font, body, body,
+		h[0], h[0], h[1], h[1], h[2], h[2],
+		h[3], h[4], h[5],
+		mono, mono, mono, code, code,
+		code, code,
+	))
 }

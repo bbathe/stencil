@@ -21,6 +21,7 @@ Usage:
   stencil -                              # read stdin, write stdout
   stencil - -output out.docx             # read stdin, write file
   stencil doc.md -output doc.pdf         # native PDF (built-in fonts)
+  stencil doc.md -style theme.json       # shared margins/fonts/sizes
 
 Flags:
 `
@@ -33,10 +34,12 @@ func main() {
 
 	var (
 		outputPath  string
+		stylePath   string
 		showVersion bool
 	)
 
 	flag.StringVar(&outputPath, "output", "", "output path (default: input with .docx extension; \"-\" for stdout; use .pdf for PDF)")
+	flag.StringVar(&stylePath, "style", "", "JSON theme file (margins, fonts, sizes) for docx and PDF")
 	flag.BoolVar(&showVersion, "version", false, "print version and exit")
 
 	// Go's flag package stops at the first non-flag argument, so
@@ -90,6 +93,7 @@ func main() {
 	opts := converter.Options{
 		InputPath:  inputPath,
 		OutputPath: outputPath,
+		StylePath:  stylePath,
 	}
 
 	if err := converter.Run(opts); err != nil {
@@ -111,6 +115,8 @@ func splitArgs(args []string) (flags, positional []string) {
 	valueFlags := map[string]bool{
 		"-output":  true,
 		"--output": true,
+		"-style":   true,
+		"--style":  true,
 	}
 
 	i := 0

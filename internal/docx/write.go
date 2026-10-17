@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/bbathe/stencil/internal/theme"
 )
 
 // ── Serialisation ─────────────────────────────────────────────────────────────
@@ -58,7 +60,7 @@ func (d *Document) Write(w io.Writer) (retErr error) {
 		}
 	}
 
-	if err := writeEntry(zw, "word/styles.xml", defaultStyles()); err != nil {
+	if err := writeEntry(zw, "word/styles.xml", stylesXML(d.themeOrDefault())); err != nil {
 		return err
 	}
 
@@ -233,20 +235,21 @@ func (d *Document) documentXML() ([]byte, error) {
 		` xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">` + "\n")
 	b.WriteString(`<w:body>` + "\n")
 
+	th := d.themeOrDefault()
 	for _, el := range d.body {
 		switch v := el.(type) {
 		case *Para:
-			writePara(&b, v)
+			writePara(&b, v, th)
 		case *Table:
-			writeTable(&b, v)
+			writeTable(&b, v, th)
 		}
 	}
 
-	// Section properties with proper letter-page margins (1 inch all around)
-	b.WriteString(`<w:sectPr>` +
-		`<w:pgSz w:w="12240" w:h="15840"/>` +
-		`<w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/>` +
-		`</w:sectPr>` + "\n")
+	m := th.MarginTwips()
+	fmt.Fprintf(&b, `<w:sectPr>`+
+		`<w:pgSz w:w="12240" w:h="15840"/>`+
+		`<w:pgMar w:top="%d" w:right="%d" w:bottom="%d" w:left="%d" w:header="720" w:footer="720" w:gutter="0"/>`+
+		`</w:sectPr>`+"\n", m, m, m, m)
 	b.WriteString(`</w:body></w:document>`)
 	return b.Bytes(), nil
 }
@@ -265,6 +268,7 @@ func (d *Document) footnotesXML() ([]byte, error) {
 	b.WriteString(`<w:footnote w:type="separator" w:id="-1"><w:p><w:r><w:separator/></w:r></w:p></w:footnote>`)
 	b.WriteString(`<w:footnote w:type="continuationSeparator" w:id="0"><w:p><w:r><w:continuationSeparator/></w:r></w:p></w:footnote>`)
 
+	th := d.themeOrDefault()
 	for _, fn := range d.footnotes {
 		fmt.Fprintf(&b, `<w:footnote w:id="%d"><w:p>`, fn.id)
 		b.WriteString(`<w:pPr><w:pStyle w:val="FootnoteText"/></w:pPr>`)
@@ -275,11 +279,11 @@ func (d *Document) footnotesXML() ([]byte, error) {
 			for _, item := range fn.para.items {
 				switch v := item.(type) {
 				case textRun:
-					writeRun(&b, v, false)
+					writeRun(&b, v, false, th)
 				case hyperlinkItem:
 					fmt.Fprintf(&b, `<w:hyperlink r:id="%s">`, v.rId)
 					for _, r := range v.runs {
-						writeRun(&b, r, false)
+						writeRun(&b, r, false, th)
 					}
 					b.WriteString(`</w:hyperlink>`)
 				case imageItem:
@@ -338,7 +342,7 @@ func (d *Document) footnotesRels() ([]byte, error) {
 
 // ── XML element writers ───────────────────────────────────────────────────────
 
-func writePara(b *bytes.Buffer, p *Para) {
+func writePara(b *bytes.Buffer, p *Para, th *theme.Theme) {
 	b.WriteString(`<w:p>`)
 
 	// Paragraph properties
@@ -379,11 +383,11 @@ func writePara(b *bytes.Buffer, p *Para) {
 	for _, item := range p.items {
 		switch v := item.(type) {
 		case textRun:
-			writeRun(b, v, p.forceBold)
+			writeRun(b, v, p.forceBold, th)
 		case hyperlinkItem:
 			fmt.Fprintf(b, `<w:hyperlink r:id="%s">`, v.rId)
 			for _, r := range v.runs {
-				writeRun(b, r, p.forceBold)
+				writeRun(b, r, p.forceBold, th)
 			}
 			b.WriteString(`</w:hyperlink>`)
 		case imageItem:
@@ -396,7 +400,10 @@ func writePara(b *bytes.Buffer, p *Para) {
 	b.WriteString(`</w:p>` + "\n")
 }
 
-func writeRun(b *bytes.Buffer, r textRun, forceBold bool) {
+func writeRun(b *bytes.Buffer, r textRun, forceBold bool, th *theme.Theme) {
+	if th == nil {
+		th = theme.Default()
+	}
 	b.WriteString(`<w:r>`)
 
 	bold := r.bold || forceBold
@@ -419,8 +426,9 @@ func writeRun(b *bytes.Buffer, r textRun, forceBold bool) {
 			fmt.Fprintf(b, `<w:color w:val="%s"/>`, r.color)
 		}
 		if r.code {
-			b.WriteString(`<w:rFonts w:ascii="Courier New" w:hAnsi="Courier New" w:cs="Courier New"/>`)
-			b.WriteString(`<w:sz w:val="20"/>`)
+			mono := xmlAttr(th.Mono)
+			fmt.Fprintf(b, `<w:rFonts w:ascii="%s" w:hAnsi="%s" w:cs="%s"/>`, mono, mono, mono)
+			fmt.Fprintf(b, `<w:sz w:val="%d"/>`, th.CodeHalfPoints())
 		}
 		b.WriteString(`</w:rPr>`)
 	}
@@ -465,13 +473,12 @@ func writeImageRun(b *bytes.Buffer, img imageItem) {
 		img.widthEMU, img.heightEMU, id, id, altS, id, id, altS, img.rId, img.widthEMU, img.heightEMU)
 }
 
-// usablePageWidthTwips is the content width for letter page with 1" margins
-// (12240 - 2*1440), matching documentXML sectPr.
-const usablePageWidthTwips = 9360
-
-func writeTable(b *bytes.Buffer, t *Table) {
+func writeTable(b *bytes.Buffer, t *Table, th *theme.Theme) {
+	if th == nil {
+		th = theme.Default()
+	}
 	cols := tableColumnCount(t)
-	widths := equalColumnWidths(cols, usablePageWidthTwips)
+	widths := equalColumnWidths(cols, th.ContentWidthTwips())
 
 	b.WriteString(`<w:tbl>`)
 	b.WriteString(`<w:tblPr>` +
@@ -503,7 +510,7 @@ func writeTable(b *bytes.Buffer, t *Table) {
 				b.WriteString(`<w:shd w:val="clear" w:color="auto" w:fill="D9D9D9"/>`)
 			}
 			b.WriteString(`</w:tcPr>`)
-			writePara(b, cell)
+			writePara(b, cell, th)
 			b.WriteString(`</w:tc>`)
 		}
 		b.WriteString(`</w:tr>`)

@@ -13,23 +13,34 @@ import (
 	"github.com/yuin/goldmark/text"
 
 	"github.com/bbathe/stencil/internal/parser"
+	"github.com/bbathe/stencil/internal/theme"
 )
 
+// Options configures PDF rendering.
+type Options struct {
+	Theme *theme.Theme
+}
+
 // Render writes a PDF file for doc to outputPath.
-func Render(doc *parser.Document, outputPath string) error {
+func Render(doc *parser.Document, outputPath string, opts Options) error {
 	f, err := os.Create(outputPath) //nolint:gosec // path is caller-supplied
 	if err != nil {
 		return err
 	}
 	defer func() { _ = f.Close() }()
-	return RenderTo(doc, f)
+	return RenderTo(doc, f, opts)
 }
 
 // RenderTo writes a PDF for doc to w.
-func RenderTo(doc *parser.Document, w io.Writer) error {
+func RenderTo(doc *parser.Document, w io.Writer, opts Options) error {
+	th := opts.Theme
+	if th == nil {
+		th = theme.Default()
+	}
 	r := &walker{
 		source:       doc.Source,
-		canvas:       newCanvas(),
+		theme:        th,
+		canvas:       newCanvas(th),
 		unknownKinds: map[string]bool{},
 		footnotes:    map[int]string{},
 	}
@@ -46,6 +57,7 @@ func RenderTo(doc *parser.Document, w io.Writer) error {
 
 type walker struct {
 	source []byte
+	theme  *theme.Theme
 	canvas *canvas
 
 	boldCount   int
@@ -115,7 +127,7 @@ func (w *walker) visit(node ast.Node, entering bool) (ast.WalkStatus, error) {
 		if entering {
 			w.beginBlock()
 		} else {
-			size := headingSize(n.Level)
+			size := w.theme.HeadingPtAt(n.Level)
 			for i := range w.spans {
 				w.spans[i].font = fontBold
 				if n.Level >= 6 {
@@ -142,7 +154,7 @@ func (w *walker) visit(node ast.Node, entering bool) (ast.WalkStatus, error) {
 			if w.listItemDepth == 0 || len(w.spans) == 0 {
 				w.beginBlock()
 				if w.listPrefix != "" {
-					w.addSpan(w.listPrefix, fontRegular, bodySize, false)
+					w.addSpan(w.listPrefix, fontRegular, w.theme.BodyPt, false)
 					w.listPrefix = "" // only first paragraph of the item
 				}
 			}
@@ -201,7 +213,7 @@ func (w *walker) visit(node ast.Node, entering bool) (ast.WalkStatus, error) {
 				sb.Write(seg.Value(w.source))
 			}
 			if t := stripTags(sb.String()); t != "" {
-				w.canvas.writeParagraph([]textSpan{{text: t, font: fontRegular, size: bodySize}}, 0, 8)
+				w.canvas.writeParagraph([]textSpan{{text: t, font: fontRegular, size: w.theme.BodyPt}}, 0, 8)
 			}
 		}
 		return ast.WalkSkipChildren, nil
@@ -224,7 +236,7 @@ func (w *walker) visit(node ast.Node, entering bool) (ast.WalkStatus, error) {
 			}
 			w.listPrefix = prefix
 			w.beginBlock()
-			w.addSpan(prefix, fontRegular, bodySize, false)
+			w.addSpan(prefix, fontRegular, w.theme.BodyPt, false)
 		} else {
 			// Tight items (TextBlock, no Paragraph) flush here.
 			if len(w.spans) > 0 {
@@ -315,7 +327,7 @@ func (w *walker) visit(node ast.Node, entering bool) (ast.WalkStatus, error) {
 
 	case *ast.CodeSpan:
 		if entering {
-			w.addSpan(string(n.Text(w.source)), fontMono, bodySize, false)
+			w.addSpan(string(n.Text(w.source)), fontMono, w.theme.CodePt, false)
 		}
 		return ast.WalkSkipChildren, nil
 
@@ -334,7 +346,7 @@ func (w *walker) visit(node ast.Node, entering bool) (ast.WalkStatus, error) {
 			if alt == "" {
 				alt = string(n.Destination)
 			}
-			w.addSpan("[image: "+alt+"]", fontItalic, bodySize, false)
+			w.addSpan("[image: "+alt+"]", fontItalic, w.theme.BodyPt, false)
 		}
 		return ast.WalkSkipChildren, nil
 
@@ -406,7 +418,7 @@ func (w *walker) addText(t string) {
 	case w.italicCount > 0:
 		f = fontItalic
 	}
-	w.addSpan(t, f, bodySize, w.strikeCount > 0)
+	w.addSpan(t, f, w.theme.BodyPt, w.strikeCount > 0)
 }
 
 func (w *walker) addSpan(t string, f fontID, size float64, strike bool) {
@@ -441,19 +453,6 @@ func (w *walker) emitFootnotes() {
 			font: fontRegular,
 			size: 10,
 		}}, 0, 4)
-	}
-}
-
-func headingSize(level int) float64 {
-	switch level {
-	case 1:
-		return 24
-	case 2:
-		return 18
-	case 3:
-		return 14
-	default:
-		return 12
 	}
 }
 

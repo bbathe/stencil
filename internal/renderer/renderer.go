@@ -10,11 +10,13 @@ import (
 
 	"github.com/bbathe/stencil/internal/docx"
 	"github.com/bbathe/stencil/internal/parser"
+	"github.com/bbathe/stencil/internal/theme"
 )
 
 // Options controls how a parsed document is rendered to DOCX.
 type Options struct {
-	BaseDir string // resolve relative image paths against this directory
+	BaseDir string       // resolve relative image paths against this directory
+	Theme   *theme.Theme // nil = theme.Default()
 }
 
 // Render walks doc and writes a DOCX file to outputPath.
@@ -38,6 +40,10 @@ func RenderTo(doc *parser.Document, w io.Writer, opts Options) error {
 func build(doc *parser.Document, opts Options) (*docx.Document, error) {
 	d := docx.New()
 	d.BaseDir = opts.BaseDir
+	d.Theme = opts.Theme
+	if d.Theme == nil {
+		d.Theme = theme.Default()
+	}
 
 	wk := &walker{
 		doc:                d,

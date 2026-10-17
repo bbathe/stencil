@@ -3,17 +3,13 @@ package pdf
 import (
 	"fmt"
 	"strings"
+
+	"github.com/bbathe/stencil/internal/theme"
 )
 
 const (
-	pageW    = 612.0
-	pageH    = 792.0
-	marginL  = 72.0
-	marginR  = 72.0
-	marginT  = 72.0
-	marginB  = 72.0
-	bodySize = 12.0
-	codeSize = 10.0
+	pageW = 612.0
+	pageH = 792.0
 )
 
 type fontID string
@@ -31,15 +27,29 @@ type canvas struct {
 	y       float64
 	xLeft   float64
 	maxW    float64
+	marginB float64
+	marginT float64
 	lineGap float64
+	bodyPt  float64
+	codePt  float64
 }
 
-func newCanvas() *canvas {
-	c := &canvas{
-		xLeft:   marginL,
-		maxW:    pageW - marginL - marginR,
-		lineGap: 1.25,
+func newCanvas(th *theme.Theme) *canvas {
+	if th == nil {
+		th = theme.Default()
 	}
+	m := th.MarginPt()
+	c := &canvas{
+		xLeft:   m,
+		maxW:    pageW - 2*m,
+		marginB: m,
+		marginT: m,
+		lineGap: 1.25,
+		bodyPt:  th.BodyPt,
+		codePt:  th.CodePt,
+	}
+	// Alias table: PDF always draws Helvetica/Courier built-ins.
+	_, _ = theme.NormalizePDFFonts(th.Font, th.Mono)
 	c.newPage()
 	return c
 }
@@ -47,18 +57,18 @@ func newCanvas() *canvas {
 func (c *canvas) newPage() {
 	c.pages = append(c.pages, strings.Builder{})
 	c.cur = &c.pages[len(c.pages)-1]
-	c.y = pageH - marginT
+	c.y = pageH - c.marginT
 }
 
 func (c *canvas) ensureSpace(h float64) {
-	if c.y-h < marginB {
+	if c.y-h < c.marginB {
 		c.newPage()
 	}
 }
 
 func (c *canvas) moveDown(h float64) {
 	c.y -= h
-	if c.y < marginB {
+	if c.y < c.marginB {
 		c.newPage()
 	}
 }
@@ -101,7 +111,7 @@ type piece struct {
 	strike bool
 }
 
-func flattenSpans(spans []textSpan) []piece {
+func flattenSpans(spans []textSpan, defaultSize float64) []piece {
 	var out []piece
 	for _, sp := range spans {
 		if sp.text == "" {
@@ -109,7 +119,7 @@ func flattenSpans(spans []textSpan) []piece {
 		}
 		size := sp.size
 		if size == 0 {
-			size = bodySize
+			size = defaultSize
 		}
 		s := sp.text
 		for len(s) > 0 {
@@ -130,7 +140,7 @@ func flattenSpans(spans []textSpan) []piece {
 }
 
 func (c *canvas) writeParagraph(spans []textSpan, indent, after float64) {
-	words := flattenSpans(spans)
+	words := flattenSpans(spans, c.bodyPt)
 	if len(words) == 0 {
 		if after > 0 {
 			c.moveDown(after)
@@ -193,7 +203,7 @@ func (c *canvas) emitLine(x float64, line []piece) {
 }
 
 func (c *canvas) writeCodeBlock(lines []string) {
-	size := codeSize
+	size := c.codePt
 	lineH := size * 1.2
 	pad := 6.0
 	indent := 12.0
@@ -242,7 +252,7 @@ func (c *canvas) writeTable(rows [][]string, header bool) {
 		return
 	}
 	colW := c.maxW / float64(cols)
-	size := bodySize
+	size := c.bodyPt
 	lineH := size * 1.3
 	for ri, row := range rows {
 		for len(row) < cols {

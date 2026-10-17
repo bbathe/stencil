@@ -30,6 +30,8 @@ import (
 	"time"
 
 	_ "golang.org/x/image/webp"
+
+	"github.com/bbathe/stencil/internal/theme"
 )
 
 // fixedZipTime is used for all zip entry timestamps and core properties so
@@ -58,6 +60,9 @@ type Document struct {
 	// BaseDir is prepended to relative local image paths (typically the
 	// directory containing the source .md file). Empty means use the path as-is.
 	BaseDir string
+
+	// Theme controls margins, fonts, and type sizes. Nil means theme.Default().
+	Theme *theme.Theme
 }
 
 type (
@@ -77,6 +82,13 @@ type footnoteEntry struct {
 
 // New returns an empty Document.
 func New() *Document { return &Document{} }
+
+func (d *Document) themeOrDefault() *theme.Theme {
+	if d.Theme != nil {
+		return d.Theme
+	}
+	return theme.Default()
+}
 
 // ── Resource registration ─────────────────────────────────────────────────────
 
@@ -151,7 +163,7 @@ func (d *Document) RegisterImage(path string) (string, int64, int64, int, error)
 
 	// Dimensions in EMU (1 inch = 914400, 96 DPI → 9525 EMU/pixel)
 	const emuPerPx = int64(9525)
-	const maxW = int64(5943600) // 6.5 inches
+	maxW := int64(d.themeOrDefault().ContentWidthTwips()) * 635 // twip → EMU
 	cfg, _, decErr := image.DecodeConfig(bytes.NewReader(data))
 	if decErr != nil {
 		return rId, 3657600, 2743200, drawingID, nil // 4" × 3" fallback

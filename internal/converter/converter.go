@@ -12,12 +12,14 @@ import (
 	"github.com/bbathe/stencil/internal/parser"
 	"github.com/bbathe/stencil/internal/pdf"
 	"github.com/bbathe/stencil/internal/renderer"
+	"github.com/bbathe/stencil/internal/theme"
 )
 
 // Options holds all user-supplied conversion parameters.
 type Options struct {
 	InputPath  string // required: path to the source .md file, or "-" for stdin
 	OutputPath string // required: path to write the output, or "-" for stdout
+	StylePath  string // optional: JSON theme file (margins, fonts, sizes)
 }
 
 // Run executes a full markdown conversion using the given options.
@@ -30,25 +32,31 @@ func Run(opts Options) error {
 		return err
 	}
 
+	th, err := theme.Load(opts.StylePath)
+	if err != nil {
+		return err
+	}
+
 	doc, err := parser.Parse(src)
 	if err != nil {
 		return fmt.Errorf("parsing markdown: %w", err)
 	}
 
 	if outputFormat(opts.OutputPath) == "pdf" {
+		popts := pdf.Options{Theme: th}
 		if opts.OutputPath == "-" {
-			if err := pdf.RenderTo(doc, os.Stdout); err != nil {
+			if err := pdf.RenderTo(doc, os.Stdout, popts); err != nil {
 				return fmt.Errorf("rendering pdf: %w", err)
 			}
 			return nil
 		}
-		if err := pdf.Render(doc, opts.OutputPath); err != nil {
+		if err := pdf.Render(doc, opts.OutputPath, popts); err != nil {
 			return fmt.Errorf("rendering pdf: %w", err)
 		}
 		return nil
 	}
 
-	ropts := renderer.Options{BaseDir: baseDir}
+	ropts := renderer.Options{BaseDir: baseDir, Theme: th}
 	if opts.OutputPath == "-" {
 		if err := renderer.RenderTo(doc, os.Stdout, ropts); err != nil {
 			return fmt.Errorf("rendering docx: %w", err)

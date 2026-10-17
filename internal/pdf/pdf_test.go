@@ -43,7 +43,7 @@ A footnote[^1].
 		t.Fatal(err)
 	}
 	var buf bytes.Buffer
-	if err := pdf.RenderTo(doc, &buf); err != nil {
+	if err := pdf.RenderTo(doc, &buf, pdf.Options{}); err != nil {
 		t.Fatal(err)
 	}
 	out := buf.String()
@@ -70,7 +70,7 @@ func TestRenderFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := pdf.Render(doc, out); err != nil {
+	if err := pdf.Render(doc, out, pdf.Options{}); err != nil {
 		t.Fatal(err)
 	}
 	b, err := os.ReadFile(out) //nolint:gosec
