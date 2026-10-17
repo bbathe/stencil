@@ -30,3 +30,37 @@ func TestRunFileToFile(t *testing.T) {
 		t.Fatalf("docx too small: %d", fi.Size())
 	}
 }
+
+func TestRunPDF(t *testing.T) {
+	dir := t.TempDir()
+	in := filepath.Join(dir, "doc.md")
+	out := filepath.Join(dir, "doc.pdf")
+	if err := os.WriteFile(in, []byte("# Hi\n\npara\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := converter.Run(converter.Options{InputPath: in, OutputPath: out}); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(out) //nolint:gosec
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(b) < 100 || string(b[:5]) != "%PDF-" {
+		t.Fatalf("not a pdf: size=%d head=%q", len(b), string(b[:min(8, len(b))]))
+	}
+}
+
+func TestRunPDFRejectsTemplate(t *testing.T) {
+	dir := t.TempDir()
+	in := filepath.Join(dir, "doc.md")
+	out := filepath.Join(dir, "doc.pdf")
+	_ = os.WriteFile(in, []byte("# Hi\n"), 0o600)
+	err := converter.Run(converter.Options{
+		InputPath:    in,
+		OutputPath:   out,
+		TemplatePath: "x.docx",
+	})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+}

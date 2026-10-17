@@ -1,6 +1,6 @@
 # stencil
 
-`stencil` takes a GitHub Flavored Markdown file and produces a `.docx`. Single binary, no runtime dependencies, deterministic output.
+`stencil` takes a GitHub Flavored Markdown file and produces a `.docx` (or a simple native `.pdf`). Single binary, no runtime dependencies, deterministic output.
 
 Pandoc works, but it's a large install and does far more than most people need. If your use case is "turn this `.md` into a Word doc that matches our template," stencil covers it without the overhead.
 
@@ -17,6 +17,7 @@ Pre-built binaries (with `SHA256SUMS`) are on the [Releases](https://github.com/
 ```bash
 stencil doc.md                                              # outputs doc.docx
 stencil doc.md -output reports/out.docx                    # custom path
+stencil doc.md -output doc.pdf                             # native PDF (Helvetica/Courier)
 stencil doc.md -template reference.docx                    # borrow styles.xml
 stencil doc.md -template reference.docx -style-map s.json  # custom style mapping
 cat doc.md | stencil -                                      # stdin → stdout
@@ -28,12 +29,16 @@ stencil -version
 
 | Flag          | Default               | Description                               |
 |---------------|-----------------------|-------------------------------------------|
-| `-template`   | *(none)*              | Reference `.docx` to borrow `styles.xml` from (numbering, headers/footers, and margins are not copied) |
-| `-output`     | `<input>.docx`        | Output file path, or `-` for stdout       |
-| `-style-map`  | *(built-in defaults)* | JSON file mapping elements to style names |
+| `-template`   | *(none)*              | Reference `.docx` to borrow `styles.xml` from (numbering, headers/footers, and margins are not copied); docx only |
+| `-output`     | `<input>.docx`        | Output file path (`.docx` or `.pdf`), or `-` for stdout |
+| `-style-map`  | *(built-in defaults)* | JSON file mapping elements to style names (docx only) |
 | `-version`    | —                     | Print version and exit                    |
 
 Use `-` as the input path to read Markdown from stdin. When input is `-` and `-output` is omitted, the DOCX is written to stdout.
+
+## PDF output
+
+`-output file.pdf` writes a PDF with a small hand-rolled writer (no Office, no external tools). Layout is simple GFM: headings, paragraphs, lists, tables, code blocks, quotes, rules, links as text, images as `[image: …]` placeholders, footnotes as an end Notes section. Fonts are PDF built-ins (**Helvetica** / **Helvetica-Bold** / **Helvetica-Oblique**, **Courier** for code). Unicode outside WinAnsi becomes `?`. `-template` and `-style-map` do not apply to PDF.
 
 ## Templates and style maps
 

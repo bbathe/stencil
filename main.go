@@ -13,13 +13,14 @@ import (
 // version is set at build time via -ldflags "-X main.version=<tag>".
 var version = "dev"
 
-const usage = `stencil — convert GitHub Flavored Markdown to .docx
+const usage = `stencil — convert GitHub Flavored Markdown to .docx or .pdf
 
 Usage:
   stencil [flags] INPUT.md
   stencil INPUT.md [flags]
   stencil -                              # read stdin, write stdout
   stencil - -output out.docx             # read stdin, write file
+  stencil doc.md -output doc.pdf         # native PDF (built-in fonts)
 
 Flags:
 `
@@ -38,8 +39,8 @@ func main() {
 	)
 
 	flag.StringVar(&templatePath, "template", "", "path to reference .docx (borrows styles.xml only)")
-	flag.StringVar(&outputPath, "output", "", "output path (default: input with .docx extension; \"-\" for stdout)")
-	flag.StringVar(&styleMapPath, "style-map", "", "path to JSON style-map file")
+	flag.StringVar(&outputPath, "output", "", "output path (default: input with .docx extension; \"-\" for stdout; use .pdf for PDF)")
+	flag.StringVar(&styleMapPath, "style-map", "", "path to JSON style-map file (docx only)")
 	flag.BoolVar(&showVersion, "version", false, "print version and exit")
 
 	// Go's flag package stops at the first non-flag argument, so
@@ -72,16 +73,21 @@ func main() {
 			outputPath = replaceExt(inputPath, ".docx")
 		}
 	} else if outputPath != "-" {
-		// If --output is a directory, place the .docx inside it.
+		// If --output is a directory, place the default .docx inside it.
 		if fi, err := os.Stat(outputPath); err == nil && fi.IsDir() {
 			base := "stdin.docx"
 			if inputPath != "-" {
 				base = replaceExt(filepath.Base(inputPath), ".docx")
 			}
 			outputPath = filepath.Join(outputPath, base)
-		} else if !strings.HasSuffix(strings.ToLower(outputPath), ".docx") {
-			// Ensure the output always ends in .docx.
-			outputPath += ".docx"
+		} else {
+			lower := strings.ToLower(outputPath)
+			switch {
+			case strings.HasSuffix(lower, ".docx"), strings.HasSuffix(lower, ".pdf"):
+				// keep as-is
+			default:
+				outputPath += ".docx"
+			}
 		}
 	}
 

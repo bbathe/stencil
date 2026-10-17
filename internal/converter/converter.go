@@ -7,8 +7,10 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/bbathe/stencil/internal/parser"
+	"github.com/bbathe/stencil/internal/pdf"
 	"github.com/bbathe/stencil/internal/renderer"
 	"github.com/bbathe/stencil/internal/stylemap"
 )
@@ -16,21 +18,17 @@ import (
 // Options holds all user-supplied conversion parameters.
 type Options struct {
 	InputPath    string // required: path to the source .md file, or "-" for stdin
-	OutputPath   string // required: path to write the output .docx, or "-" for stdout
-	TemplatePath string // optional: path to a reference .docx
-	StyleMapPath string // optional: path to a JSON style-map file
+	OutputPath   string // required: path to write the output, or "-" for stdout
+	TemplatePath string // optional: path to a reference .docx (docx only)
+	StyleMapPath string // optional: path to a JSON style-map file (docx only)
 }
 
-// Run executes a full markdown-to-docx conversion using the given options.
+// Run executes a full markdown conversion using the given options.
+// Output format is inferred from OutputPath extension (.docx or .pdf).
 // It returns a non-nil error if any step fails; the error message is
 // suitable for printing directly to stderr.
 func Run(opts Options) error {
 	src, baseDir, err := readInput(opts.InputPath)
-	if err != nil {
-		return err
-	}
-
-	sm, err := stylemap.Load(opts.StyleMapPath)
 	if err != nil {
 		return err
 	}
@@ -40,24 +38,59 @@ func Run(opts Options) error {
 		return fmt.Errorf("parsing markdown: %w", err)
 	}
 
-	ropts := renderer.Options{
-		TemplatePath: opts.TemplatePath,
-		BaseDir:      baseDir,
-		StyleMap:     sm,
-	}
+	format := outputFormat(opts.OutputPath)
+	switch format {
+	case "pdf":
+		if opts.TemplatePath != "" {
+			return fmt.Errorf("-template applies to .docx only")
+		}
+		if opts.StyleMapPath != "" {
+			return fmt.Errorf("-style-map applies to .docx only")
+		}
+		popts := pdf.Options{BaseDir: baseDir}
+		if opts.OutputPath == "-" {
+			if err := pdf.RenderTo(doc, os.Stdout, popts); err != nil {
+				return fmt.Errorf("rendering pdf: %w", err)
+			}
+			return nil
+		}
+		if err := pdf.Render(doc, opts.OutputPath, popts); err != nil {
+			return fmt.Errorf("rendering pdf: %w", err)
+		}
+		return nil
 
-	if opts.OutputPath == "-" {
-		if err := renderer.RenderTo(doc, os.Stdout, ropts); err != nil {
+	default: // docx
+		sm, err := stylemap.Load(opts.StyleMapPath)
+		if err != nil {
+			return err
+		}
+		ropts := renderer.Options{
+			TemplatePath: opts.TemplatePath,
+			BaseDir:      baseDir,
+			StyleMap:     sm,
+		}
+		if opts.OutputPath == "-" {
+			if err := renderer.RenderTo(doc, os.Stdout, ropts); err != nil {
+				return fmt.Errorf("rendering docx: %w", err)
+			}
+			return nil
+		}
+		if err := renderer.Render(doc, opts.OutputPath, ropts); err != nil {
 			return fmt.Errorf("rendering docx: %w", err)
 		}
 		return nil
 	}
+}
 
-	if err := renderer.Render(doc, opts.OutputPath, ropts); err != nil {
-		return fmt.Errorf("rendering docx: %w", err)
+func outputFormat(path string) string {
+	if path == "-" {
+		return "docx"
 	}
-
-	return nil
+	ext := strings.ToLower(filepath.Ext(path))
+	if ext == ".pdf" {
+		return "pdf"
+	}
+	return "docx"
 }
 
 // readInput loads markdown bytes and the directory used to resolve relative
