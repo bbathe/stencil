@@ -41,6 +41,8 @@ Without `-template`, built-in styles use named fonts (**Arial** body/headings, *
 
 Pass a `-template` and stencil pulls the `styles.xml` out of that document and injects it into a fresh one. Your headings, body text, and code blocks all pick up whatever styles are defined there. The source document itself is never touched. Other template parts (theme, numbering, headers/footers, section margins) are not borrowed. Templates that rely on theme fonts may still look wrong in LibreOffice; prefer templates with named fonts.
 
+For a Word-like Calibri / Calibri Light look, see [`examples/word-calibri/`](examples/word-calibri/) (`-template` + `-style-map`).
+
 If you need to rename styles (say your template calls it "Body Text" instead of "Normal"), write a style map:
 
 ```json
