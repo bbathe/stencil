@@ -185,6 +185,35 @@ func TestRichTextInsideLinks(t *testing.T) {
 	}
 }
 
+func TestLooseListItemContinuationIndent(t *testing.T) {
+	md := strings.Join([]string{
+		"- First paragraph of the item.",
+		"",
+		"  Second paragraph stays in the bullet.",
+		"",
+		"  Third paragraph too.",
+		"- Next item.",
+		"",
+	}, "\n")
+	doc, err := parser.Parse([]byte(md))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sm, _ := stylemap.Load("")
+	var buf bytes.Buffer
+	if err := renderer.RenderTo(doc, &buf, renderer.Options{StyleMap: sm}); err != nil {
+		t.Fatal(err)
+	}
+	docXML := string(unzip(t, buf.Bytes())["word/document.xml"])
+	if !strings.Contains(docXML, `w:numPr`) {
+		t.Fatal("expected list numPr on first paragraph")
+	}
+	// Continuation paras use left indent matching ilvl 0 (720 twips), not body flush-left.
+	if c := strings.Count(docXML, `w:ind w:left="720"`); c < 2 {
+		t.Fatalf("expected >=2 continuation indents, got %d\n%s", c, docXML)
+	}
+}
+
 func TestUnhandledNodeErrors(t *testing.T) {
 	// Definition lists are not part of GFM / stencil's parser, but if they
 	// appear in the AST the renderer must fail instead of dropping them.

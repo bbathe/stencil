@@ -35,12 +35,10 @@ type walker struct {
 	// from NewOrderedNumID() so numbering restarts across separate lists.
 	listNumIDs []int
 
-	// pendingNumId/Ilvl are set when a ListItem is entered and consumed when
-	// the first paragraph (Paragraph node or inline Text) inside it is created.
-	// This is necessary because loose list items wrap their content in a
-	// Paragraph child, while tight list items have Text as a direct child.
-	pendingNumId int // 0 = nothing pending
-	pendingILvl  int
+	// listItems stacks open ListItem contexts. The first paragraph in an item
+	// gets a bullet/number; later paragraphs (loose list items) keep the same
+	// left indent without a new bullet.
+	listItems []listItemCtx
 
 	// blockquoteDepth tracks nesting of blockquotes (0 = not inside one).
 	blockquoteDepth int
@@ -83,6 +81,35 @@ func (w *walker) errUnknown() error {
 
 func (w *walker) listDepth() int { return len(w.listNumIDs) }
 
+// listItemCtx is the open list item we are rendering paragraphs into.
+type listItemCtx struct {
+	numId       int
+	ilvl        int
+	needsBullet bool // true until the first paragraph claims the bullet/number
+}
+
+func (w *walker) currentListItem() *listItemCtx {
+	if len(w.listItems) == 0 {
+		return nil
+	}
+	return &w.listItems[len(w.listItems)-1]
+}
+
+// applyListItemFormatting styles p as either the bulleted first para of the
+// current list item or an indented continuation paragraph.
+func (w *walker) applyListItemFormatting(p *docx.Para) {
+	li := w.currentListItem()
+	if li == nil {
+		return
+	}
+	if li.needsBullet {
+		p.SetNumPr(li.numId, li.ilvl)
+		li.needsBullet = false
+		return
+	}
+	p.SetListContinue(li.ilvl)
+}
+
 // ── Footnote pre-walk ─────────────────────────────────────────────────────────
 
 // collectFootnotes registers all Footnote definition nodes before the main
@@ -108,10 +135,9 @@ func (w *walker) ensureCurrentPara() {
 	if w.currentPara != nil || w.inFootnote {
 		return
 	}
-	if w.pendingNumId > 0 {
+	if w.currentListItem() != nil {
 		p := w.doc.AddParagraph(w.styleMap.Style("list_item"))
-		p.SetNumPr(w.pendingNumId, w.pendingILvl)
-		w.pendingNumId = 0
+		w.applyListItemFormatting(p)
 		w.currentPara = p
 	}
 }
@@ -143,9 +169,9 @@ func (w *walker) visit(node ast.Node, entering bool) (ast.WalkStatus, error) {
 
 	// ── Paragraph ─────────────────────────────────────────────────────────────
 	//
-	// Loose list items wrap content in a Paragraph child; when pendingNumId is
-	// set, that paragraph inherits the list's numId/ilvl. Inside a footnote,
-	// additional paragraphs are joined with a space into the existing Para.
+	// Loose list items wrap content in Paragraph children. The first gets the
+	// bullet/number; later ones keep list indentation via SetListContinue.
+	// Inside a footnote, additional paragraphs are joined with a space.
 
 	case *ast.Paragraph:
 		if entering {
@@ -157,15 +183,17 @@ func (w *walker) visit(node ast.Node, entering bool) (ast.WalkStatus, error) {
 				// Do NOT change currentPara — it still points at the footnote Para.
 				break
 			}
+			inList := w.currentListItem() != nil
 			style := w.styleMap.Style("body")
-			if w.blockquoteDepth > 0 && w.pendingNumId == 0 {
+			switch {
+			case inList:
+				style = w.styleMap.Style("list_item")
+			case w.blockquoteDepth > 0:
 				style = w.styleMap.Style("blockquote")
 			}
 			p := w.doc.AddParagraph(style)
-			if w.pendingNumId > 0 {
-				// Loose list item: inherit the pending numPr.
-				p.SetNumPr(w.pendingNumId, w.pendingILvl)
-				w.pendingNumId = 0
+			if inList {
+				w.applyListItemFormatting(p)
 			} else if w.blockquoteDepth > 0 {
 				p.SetBlockquoteDepth(w.blockquoteDepth)
 			}
@@ -250,11 +278,16 @@ func (w *walker) visit(node ast.Node, entering bool) (ast.WalkStatus, error) {
 		if entering {
 			depth := w.listDepth()
 			ilvl := max(depth-1, 0)
-			w.pendingNumId = w.listNumIDs[depth-1]
-			w.pendingILvl = ilvl
+			w.listItems = append(w.listItems, listItemCtx{
+				numId:       w.listNumIDs[depth-1],
+				ilvl:        ilvl,
+				needsBullet: true,
+			})
 		} else {
 			w.currentPara = nil
-			w.pendingNumId = 0
+			if len(w.listItems) > 0 {
+				w.listItems = w.listItems[:len(w.listItems)-1]
+			}
 		}
 
 	// ── Tables ────────────────────────────────────────────────────────────────

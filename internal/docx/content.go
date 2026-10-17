@@ -18,6 +18,7 @@ type Para struct {
 	items           []paraItem // textRun | hyperlinkItem | imageItem | footnoteRefItem
 	numID           int        // 0 = not a list para
 	numILvl         int        // 0-based list depth
+	listContinue    bool       // indented continuation para inside a list item (no bullet)
 	blockquoteDepth int        // 0 = not a blockquote; 1+ = nesting depth
 	hrule           bool
 	forceBold       bool
@@ -31,8 +32,16 @@ func (d *Document) AddParagraph(style string) *Para {
 	return p
 }
 
-// SetNumPr marks the paragraph as a list item.
+// SetNumPr marks the paragraph as a list item (with bullet/number).
 func (p *Para) SetNumPr(numId, ilvl int) { p.numID = numId; p.numILvl = ilvl }
+
+// SetListContinue marks a follow-on paragraph inside a list item: same left
+// indent as list text at ilvl, but no bullet/number. Matches numbering.xml
+// left indent of (ilvl+1)*720 twips.
+func (p *Para) SetListContinue(ilvl int) {
+	p.listContinue = true
+	p.numILvl = ilvl
+}
 
 // SetBlockquoteDepth sets the blockquote nesting depth (1-based).
 // Each additional level adds more left indentation.

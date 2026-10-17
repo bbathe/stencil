@@ -347,7 +347,7 @@ func writePara(b *bytes.Buffer, p *Para) {
 	b.WriteString(`<w:p>`)
 
 	// Paragraph properties
-	needPPr := p.style != "" || p.numID > 0 || p.blockquoteDepth > 0 || p.hrule || p.align != AlignDefault
+	needPPr := p.style != "" || p.numID > 0 || p.listContinue || p.blockquoteDepth > 0 || p.hrule || p.align != AlignDefault
 	if needPPr {
 		b.WriteString(`<w:pPr>`)
 		if p.style != "" {
@@ -357,6 +357,9 @@ func writePara(b *bytes.Buffer, p *Para) {
 		}
 		if p.numID > 0 {
 			fmt.Fprintf(b, `<w:numPr><w:ilvl w:val="%d"/><w:numId w:val="%d"/></w:numPr>`, p.numILvl, p.numID)
+		} else if p.listContinue {
+			// Align with list body text at this level (see numbering.xml left indents).
+			fmt.Fprintf(b, `<w:ind w:left="%d"/>`, (p.numILvl+1)*720)
 		}
 		if p.blockquoteDepth > 0 {
 			b.WriteString(`<w:pBdr><w:left w:val="single" w:sz="24" w:space="4" w:color="CCCCCC"/></w:pBdr>`)
