@@ -16,7 +16,7 @@ func stylesXML(th *theme.Theme) []byte {
 	body := th.BodyHalfPoints()
 	code := th.CodeHalfPoints()
 	h := make([]int, 6)
-	for i := 0; i < 6; i++ {
+	for i := range 6 {
 		h[i] = th.HeadingHalfPoints(i + 1)
 	}
 

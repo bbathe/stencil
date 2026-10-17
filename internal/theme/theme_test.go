@@ -106,4 +106,3 @@ func TestValidateRejects(t *testing.T) {
 		t.Fatal("expected margin error")
 	}
 }
-
