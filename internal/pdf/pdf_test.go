@@ -110,3 +110,50 @@ func TestRenderFile(t *testing.T) {
 		t.Fatalf("pdf too small: %d", len(b))
 	}
 }
+
+func TestTableWrapsHeader(t *testing.T) {
+	src := []byte(`| Club Log Most Wanted Rank | Maximum Grant Amount |
+|---|---|
+| #1 | $1,000 |
+`)
+	doc, err := parser.Parse(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	if err := pdf.RenderTo(doc, &buf, pdf.Options{}); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	for _, want := range []string{"Club", "Log", "Most", "Wanted", "Rank", "Maximum", "Grant", "Amount", "#1", "$1,000"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("table content missing %q", want)
+		}
+	}
+	if !strings.Contains(out, "0.90 0.90 0.90 rg") {
+		t.Error("missing header row fill")
+	}
+}
+
+func TestPageNumbers(t *testing.T) {
+	var b strings.Builder
+	b.WriteString("# Title\n\n")
+	for i := 0; i < 80; i++ {
+		b.WriteString("Paragraph enough to force a second page of content in the PDF.\n\n")
+	}
+	doc, err := parser.Parse([]byte(b.String()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	if err := pdf.RenderTo(doc, &buf, pdf.Options{}); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "(1) Tj") {
+		t.Fatal("missing page number 1")
+	}
+	if !strings.Contains(out, "(2) Tj") {
+		t.Fatal("missing page number 2")
+	}
+}

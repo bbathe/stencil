@@ -52,6 +52,7 @@ func RenderTo(doc *parser.Document, w io.Writer, opts Options) error {
 		return err
 	}
 	r.emitFootnotes()
+	r.canvas.addPageNumbers()
 	return writePDF(w, r.canvas.contentPages(), r.canvas.pageAnnots())
 }
 
@@ -76,12 +77,14 @@ type walker struct {
 	spans  []textSpan
 	inPara bool
 
+	// Title block: leading H1 through the first thematic break (centered).
+	titleMode titleMode
+
 	// Tables
-	tableRows    [][]string
-	tableRow     []string
-	tableCell    strings.Builder
-	inTableHeader bool
-	inTableCell  bool
+	tableRows   [][]string
+	tableRow    []string
+	tableCell   strings.Builder
+	inTableCell bool
 
 	// Footnotes: index → body text; refs emit [n]
 	footnoteOrder []int
@@ -97,6 +100,15 @@ type listState struct {
 	ordered bool
 	index   int // next number for ordered lists
 }
+
+// titleMode tracks a centered lead-in for documents that open with H1.
+type titleMode int
+
+const (
+	titlePending titleMode = iota // waiting for first H1
+	titleActive                   // centering until first HR / non-title block
+	titleDone
+)
 
 func (w *walker) errUnknown() error {
 	if len(w.unknownKinds) == 0 {
@@ -128,9 +140,19 @@ func (w *walker) visit(node ast.Node, entering bool) (ast.WalkStatus, error) {
 
 	case *ast.Heading:
 		if entering {
+			if w.titleMode == titlePending {
+				if n.Level == 1 {
+					w.titleMode = titleActive
+				} else {
+					w.titleMode = titleDone
+				}
+			}
 			w.beginBlock()
 		} else {
 			size := w.theme.HeadingPtAt(n.Level)
+			if w.titleMode == titleActive && n.Level == 1 {
+				size += 2
+			}
 			for i := range w.spans {
 				w.spans[i].font = fontBold
 				if n.Level >= 6 {
@@ -139,8 +161,18 @@ func (w *walker) visit(node ast.Node, entering bool) (ast.WalkStatus, error) {
 				w.spans[i].size = size
 			}
 			before := float64(8 + (6-n.Level)*2)
+			after := 6.0
+			if w.titleMode == titleActive {
+				if n.Level == 1 {
+					before = 4
+					after = 10
+				} else {
+					before = 4
+					after = 6
+				}
+			}
 			w.canvas.moveDown(before)
-			w.canvas.writeParagraph(w.spans, 0, 6)
+			w.canvas.writeParagraphAlign(w.spans, 0, after, w.titleMode == titleActive)
 			w.spans = nil
 			w.inPara = false
 		}
@@ -179,13 +211,35 @@ func (w *walker) visit(node ast.Node, entering bool) (ast.WalkStatus, error) {
 				indent = 18 * float64(w.listItemDepth)
 				after = 4
 			}
-			w.canvas.writeParagraph(w.spans, indent, after)
+			center := false
+			if w.titleMode == titleActive && w.listItemDepth == 0 && w.blockquoteDepth == 0 {
+				allItalic := len(w.spans) > 0
+				for _, sp := range w.spans {
+					if sp.font != fontItalic && strings.TrimSpace(sp.text) != "" {
+						allItalic = false
+						break
+					}
+				}
+				if allItalic {
+					center = true
+					for i := range w.spans {
+						if w.spans[i].size == 0 || w.spans[i].size == w.theme.BodyPt {
+							w.spans[i].size = w.theme.BodyPt + 1
+						}
+					}
+					after = 10
+				} else {
+					w.endTitleBlock()
+				}
+			}
+			w.canvas.writeParagraphAlign(w.spans, indent, after, center)
 			w.spans = nil
 			w.inPara = false
 		}
 
 	case *ast.Blockquote:
 		if entering {
+			w.endTitleBlock()
 			w.blockquoteDepth++
 		} else {
 			w.blockquoteDepth--
@@ -194,16 +248,19 @@ func (w *walker) visit(node ast.Node, entering bool) (ast.WalkStatus, error) {
 	case *ast.ThematicBreak:
 		if entering {
 			w.canvas.writeHRule()
+			w.endTitleBlock()
 		}
 
 	case *ast.FencedCodeBlock:
 		if entering {
+			w.endTitleBlock()
 			w.canvas.writeCodeBlock(codeLines(n.Lines(), w.source))
 		}
 		return ast.WalkSkipChildren, nil
 
 	case *ast.CodeBlock:
 		if entering {
+			w.endTitleBlock()
 			w.canvas.writeCodeBlock(codeLines(n.Lines(), w.source))
 		}
 		return ast.WalkSkipChildren, nil
@@ -223,6 +280,7 @@ func (w *walker) visit(node ast.Node, entering bool) (ast.WalkStatus, error) {
 
 	case *ast.List:
 		if entering {
+			w.endTitleBlock()
 			w.listStack = append(w.listStack, listState{ordered: n.IsOrdered(), index: n.Start})
 		} else if len(w.listStack) > 0 {
 			w.listStack = w.listStack[:len(w.listStack)-1]
@@ -254,6 +312,7 @@ func (w *walker) visit(node ast.Node, entering bool) (ast.WalkStatus, error) {
 
 	case *extast.Table:
 		if entering {
+			w.endTitleBlock()
 			w.tableRows = nil
 		} else {
 			w.canvas.writeTable(w.tableRows, true)
@@ -261,7 +320,12 @@ func (w *walker) visit(node ast.Node, entering bool) (ast.WalkStatus, error) {
 		}
 
 	case *extast.TableHeader:
-		w.inTableHeader = entering
+		if entering {
+			w.tableRow = nil
+		} else {
+			w.tableRows = append(w.tableRows, w.tableRow)
+			w.tableRow = nil
+		}
 
 	case *extast.TableRow:
 		if entering {
@@ -413,6 +477,12 @@ func (w *walker) visit(node ast.Node, entering bool) (ast.WalkStatus, error) {
 func (w *walker) beginBlock() {
 	w.spans = nil
 	w.inPara = true
+}
+
+func (w *walker) endTitleBlock() {
+	if w.titleMode != titleDone {
+		w.titleMode = titleDone
+	}
 }
 
 func (w *walker) addText(t string) {

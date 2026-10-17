@@ -67,7 +67,7 @@ Defaults without `-style`:
 
 ## PDF output
 
-`-output file.pdf` writes a PDF with a small hand-rolled writer (no Office, no external tools). Layout is simple GFM: headings, paragraphs, lists, tables, code blocks, quotes, rules, images as `[image: …]` placeholders, footnotes as an end Notes section. Web links (`http`/`https`/`mailto`, and `www.…`) become clickable URI annotations; relative paths are plain text only (so viewers do not open them as local files). Unicode outside WinAnsi becomes `?`.
+`-output file.pdf` writes a PDF with a small hand-rolled writer (no Office, no external tools). Layout is simple GFM: headings, paragraphs, lists, tables (wrapped cells, shaded header row, grid), code blocks, quotes, rules, images as `[image: …]` placeholders, footnotes as an end Notes section, and page numbers in the bottom margin. Documents that open with an H1 get a short centered title block (following headings and an italic subtitle line) until the first thematic break or body paragraph. Web links (`http`/`https`/`mailto`, and `www.…`) become clickable URI annotations; relative paths are plain text only (so viewers do not open them as local files). Unicode outside WinAnsi becomes `?`.
 
 ## What it converts
 

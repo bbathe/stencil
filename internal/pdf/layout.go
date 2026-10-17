@@ -28,7 +28,7 @@ type linkAnnot struct {
 }
 
 type canvas struct {
-	pages   []strings.Builder
+	pages   []*strings.Builder
 	annots  [][]linkAnnot // parallel to pages
 	cur     *strings.Builder
 	y       float64
@@ -62,9 +62,10 @@ func newCanvas(th *theme.Theme) *canvas {
 }
 
 func (c *canvas) newPage() {
-	c.pages = append(c.pages, strings.Builder{})
+	b := &strings.Builder{}
+	c.pages = append(c.pages, b)
 	c.annots = append(c.annots, nil)
-	c.cur = &c.pages[len(c.pages)-1]
+	c.cur = b
 	c.y = pageH - c.marginT
 }
 
@@ -154,6 +155,10 @@ func flattenSpans(spans []textSpan, defaultSize float64) []piece {
 }
 
 func (c *canvas) writeParagraph(spans []textSpan, indent, after float64) {
+	c.writeParagraphAlign(spans, indent, after, false)
+}
+
+func (c *canvas) writeParagraphAlign(spans []textSpan, indent, after float64, center bool) {
 	words := flattenSpans(spans, c.bodyPt)
 	if len(words) == 0 {
 		if after > 0 {
@@ -189,7 +194,15 @@ func (c *canvas) writeParagraph(spans []textSpan, indent, after float64) {
 			line = []piece{words[0]}
 			words = words[1:]
 		}
-		c.emitLine(x0, line)
+		lineW = 0
+		for _, p := range line {
+			lineW += c.measure(p.font, p.size, p.text)
+		}
+		x := x0
+		if center && lineW < maxW {
+			x = x0 + (maxW-lineW)/2
+		}
+		c.emitLine(x, line)
 		c.moveDown(lineH)
 	}
 	if after > 0 {
@@ -271,6 +284,51 @@ func (c *canvas) writeHRule() {
 	c.moveDown(16)
 }
 
+func (c *canvas) wrapPlain(f fontID, size float64, text string, maxW float64) []string {
+	text = strings.TrimSpace(strings.ReplaceAll(text, "\n", " "))
+	if text == "" {
+		return []string{""}
+	}
+	words := strings.Fields(text)
+	var lines []string
+	var cur string
+	flush := func() {
+		if cur != "" {
+			lines = append(lines, cur)
+			cur = ""
+		}
+	}
+	for _, word := range words {
+		for c.measure(f, size, word) > maxW && len(word) > 1 {
+			flush()
+			cut := len(word)
+			for cut > 1 && c.measure(f, size, word[:cut]) > maxW {
+				cut--
+			}
+			if cut < 1 {
+				cut = 1
+			}
+			lines = append(lines, word[:cut])
+			word = word[cut:]
+		}
+		trial := word
+		if cur != "" {
+			trial = cur + " " + word
+		}
+		if c.measure(f, size, trial) <= maxW {
+			cur = trial
+			continue
+		}
+		flush()
+		cur = word
+	}
+	flush()
+	if len(lines) == 0 {
+		return []string{""}
+	}
+	return lines
+}
+
 func (c *canvas) writeTable(rows [][]string, header bool) {
 	if len(rows) == 0 {
 		return
@@ -286,31 +344,89 @@ func (c *canvas) writeTable(rows [][]string, header bool) {
 	}
 	colW := c.maxW / float64(cols)
 	size := c.bodyPt
-	lineH := size * 1.3
+	lineH := size * 1.25
+	padX := 5.0
+	padY := 4.0
+	innerW := colW - padX*2
+	if innerW < 8 {
+		innerW = 8
+	}
+
+	wrapped := make([][][]string, len(rows))
+	heights := make([]float64, len(rows))
 	for ri, row := range rows {
 		for len(row) < cols {
 			row = append(row, "")
 		}
-		c.ensureSpace(lineH + 4)
-		y := c.y
+		rows[ri] = row
+		wrapped[ri] = make([][]string, cols)
+		maxLines := 1
 		f := fontRegular
 		if header && ri == 0 {
 			f = fontBold
 		}
 		for ci := 0; ci < cols; ci++ {
-			cell := row[ci]
-			for c.measure(f, size, cell) > colW-8 && len(cell) > 1 {
-				cell = cell[:len(cell)-1]
+			lines := c.wrapPlain(f, size, row[ci], innerW)
+			wrapped[ri][ci] = lines
+			if len(lines) > maxLines {
+				maxLines = len(lines)
 			}
-			x := c.xLeft + float64(ci)*colW + 4
-			fmt.Fprintf(c.cur, "BT\n/%s %.2f Tf\n%.2f %.2f Td\n(%s) Tj\nET\n",
-				f, size, x, y-size, pdfEncode(cell))
 		}
-		fmt.Fprintf(c.cur, "0.7 0.7 0.7 RG\n0.4 w\n%.2f %.2f m %.2f %.2f l S\n0 0 0 RG\n",
-			c.xLeft, y-lineH, c.xLeft+c.maxW, y-lineH)
-		c.moveDown(lineH + 2)
+		heights[ri] = float64(maxLines)*lineH + padY*2
 	}
-	c.moveDown(8)
+
+	for ri := range rows {
+		h := heights[ri]
+		c.ensureSpace(h)
+		yTop := c.y
+		yBot := c.y - h
+		f := fontRegular
+		if header && ri == 0 {
+			f = fontBold
+			fmt.Fprintf(c.cur, "0.90 0.90 0.90 rg\n%.2f %.2f %.2f %.2f re f\n0 0 0 rg\n",
+				c.xLeft, yBot, c.maxW, h)
+		}
+		// Grid: outer box + column dividers.
+		fmt.Fprintf(c.cur, "0.55 0.55 0.55 RG\n0.5 w\n%.2f %.2f %.2f %.2f re S\n",
+			c.xLeft, yBot, c.maxW, h)
+		for ci := 1; ci < cols; ci++ {
+			x := c.xLeft + float64(ci)*colW
+			fmt.Fprintf(c.cur, "%.2f %.2f m %.2f %.2f l S\n", x, yBot, x, yTop)
+		}
+		fmt.Fprintf(c.cur, "0 0 0 RG\n")
+
+		for ci := 0; ci < cols; ci++ {
+			x := c.xLeft + float64(ci)*colW + padX
+			y := yTop - padY - size
+			for _, line := range wrapped[ri][ci] {
+				fmt.Fprintf(c.cur, "BT\n/%s %.2f Tf\n%.2f %.2f Td\n(%s) Tj\nET\n",
+					f, size, x, y, pdfEncode(line))
+				y -= lineH
+			}
+		}
+		c.y = yBot
+	}
+	c.moveDown(10)
+}
+
+// addPageNumbers draws a centered page number in the bottom margin of each page.
+func (c *canvas) addPageNumbers() {
+	n := len(c.pages)
+	if n == 0 {
+		return
+	}
+	size := 9.0
+	y := c.marginB * 0.45
+	if y < 18 {
+		y = 18
+	}
+	for i := range c.pages {
+		label := fmt.Sprintf("%d", i+1)
+		w := c.measure(fontRegular, size, label)
+		x := (pageW - w) / 2
+		fmt.Fprintf(c.pages[i], "BT\n/%s %.2f Tf\n%.2f %.2f Td\n(%s) Tj\nET\n",
+			fontRegular, size, x, y, pdfEncode(label))
+	}
 }
 
 // pdfEncode maps runes to WinAnsi where possible and escapes PDF string syntax.
