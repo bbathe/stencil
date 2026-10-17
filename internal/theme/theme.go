@@ -1,4 +1,4 @@
-// Package theme holds shared layout and type settings for docx and PDF output.
+// Package theme holds layout and type settings for DOCX output.
 package theme
 
 import (
@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-// Theme is a small set of knobs shared by the docx and PDF backends.
+// Theme is a small set of knobs for DOCX layout and type.
 type Theme struct {
 	MarginIn  Margins   `json:"margin_in"`
 	BodyPt    float64   `json:"body_pt"`
@@ -210,42 +210,4 @@ func (t *Theme) HeadingHalfPoints(level int) int {
 		level = 6
 	}
 	return int(t.HeadingPt[level-1]*2 + 0.5)
-}
-
-// HeadingPtAt returns heading level 1–6 size in points.
-func (t *Theme) HeadingPtAt(level int) float64 {
-	if level < 1 {
-		level = 1
-	}
-	if level > 6 {
-		level = 6
-	}
-	return t.HeadingPt[level-1]
-}
-
-// MarginPt returns top, right, bottom, left margins in PDF points (72 pt/in).
-func (t *Theme) MarginPt() (top, right, bottom, left float64) {
-	return t.MarginIn.Top * 72,
-		t.MarginIn.Right * 72,
-		t.MarginIn.Bottom * 72,
-		t.MarginIn.Left * 72
-}
-
-// NormalizePDFFonts maps theme font names onto PDF built-in faces.
-// PDF only ships Helvetica / Courier; unknown names fall back to those.
-func NormalizePDFFonts(font, mono string) (bodyFace, monoFace string) {
-	bodyFace = "Helvetica"
-	monoFace = "Courier"
-	switch strings.ToLower(strings.TrimSpace(font)) {
-	case "helvetica", "arial", "sans", "sans-serif", "liberation sans", "calibri", "aptos",
-		"times", "times new roman", "serif":
-		bodyFace = "Helvetica"
-	}
-	switch strings.ToLower(strings.TrimSpace(mono)) {
-	case "courier", "courier new", "consolas", "mono", "monospace", "menlo", "monaco":
-		monoFace = "Courier"
-	default:
-		monoFace = "Courier"
-	}
-	return bodyFace, monoFace
 }

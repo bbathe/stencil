@@ -107,9 +107,3 @@ func TestValidateRejects(t *testing.T) {
 	}
 }
 
-func TestNormalizePDFFonts(t *testing.T) {
-	b, m := theme.NormalizePDFFonts("Aptos", "Consolas")
-	if b != "Helvetica" || m != "Courier" {
-		t.Fatalf("got %s / %s", b, m)
-	}
-}

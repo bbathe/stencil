@@ -1,5 +1,5 @@
 // Package converter is the top-level coordinator that wires together
-// the parser and renderers.
+// the parser and renderer.
 package converter
 
 import (
@@ -7,10 +7,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/bbathe/stencil/internal/parser"
-	"github.com/bbathe/stencil/internal/pdf"
 	"github.com/bbathe/stencil/internal/renderer"
 	"github.com/bbathe/stencil/internal/theme"
 )
@@ -18,12 +16,11 @@ import (
 // Options holds all user-supplied conversion parameters.
 type Options struct {
 	InputPath  string // required: path to the source .md file, or "-" for stdin
-	OutputPath string // required: path to write the output, or "-" for stdout
+	OutputPath string // required: path to write the .docx, or "-" for stdout
 	StylePath  string // optional: JSON theme file (margins, fonts, sizes)
 }
 
-// Run executes a full markdown conversion using the given options.
-// Output format is inferred from OutputPath extension (.docx or .pdf).
+// Run executes a full markdown → DOCX conversion using the given options.
 // It returns a non-nil error if any step fails; the error message is
 // suitable for printing directly to stderr.
 func Run(opts Options) error {
@@ -42,20 +39,6 @@ func Run(opts Options) error {
 		return fmt.Errorf("parsing markdown: %w", err)
 	}
 
-	if outputFormat(opts.OutputPath) == "pdf" {
-		popts := pdf.Options{Theme: th}
-		if opts.OutputPath == "-" {
-			if err := pdf.RenderTo(doc, os.Stdout, popts); err != nil {
-				return fmt.Errorf("rendering pdf: %w", err)
-			}
-			return nil
-		}
-		if err := pdf.Render(doc, opts.OutputPath, popts); err != nil {
-			return fmt.Errorf("rendering pdf: %w", err)
-		}
-		return nil
-	}
-
 	ropts := renderer.Options{BaseDir: baseDir, Theme: th}
 	if opts.OutputPath == "-" {
 		if err := renderer.RenderTo(doc, os.Stdout, ropts); err != nil {
@@ -67,16 +50,6 @@ func Run(opts Options) error {
 		return fmt.Errorf("rendering docx: %w", err)
 	}
 	return nil
-}
-
-func outputFormat(path string) string {
-	if path == "-" {
-		return "docx"
-	}
-	if strings.ToLower(filepath.Ext(path)) == ".pdf" {
-		return "pdf"
-	}
-	return "docx"
 }
 
 // readInput loads markdown bytes and the directory used to resolve relative

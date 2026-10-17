@@ -13,15 +13,14 @@ import (
 // version is set at build time via -ldflags "-X main.version=<tag>".
 var version = "dev"
 
-const usage = `stencil — convert GitHub Flavored Markdown to .docx or .pdf
+const usage = `stencil — convert GitHub Flavored Markdown to .docx
 
 Usage:
   stencil [flags] INPUT.md
   stencil INPUT.md [flags]
   stencil -                              # read stdin, write stdout
   stencil - -output out.docx             # read stdin, write file
-  stencil doc.md -output doc.pdf         # native PDF (built-in fonts)
-  stencil doc.md -style theme.json       # shared margins/fonts/sizes
+  stencil doc.md -style theme.json       # margins/fonts/sizes
 
 Flags:
 `
@@ -38,8 +37,8 @@ func main() {
 		showVersion bool
 	)
 
-	flag.StringVar(&outputPath, "output", "", "output path (default: input with .docx extension; \"-\" for stdout; use .pdf for PDF)")
-	flag.StringVar(&stylePath, "style", "", "JSON theme file (margins, fonts, sizes) for docx and PDF")
+	flag.StringVar(&outputPath, "output", "", "output path (default: input with .docx extension; \"-\" for stdout)")
+	flag.StringVar(&stylePath, "style", "", "JSON theme file (margins, fonts, sizes)")
 	flag.BoolVar(&showVersion, "version", false, "print version and exit")
 
 	// Go's flag package stops at the first non-flag argument, so
@@ -80,11 +79,7 @@ func main() {
 			}
 			outputPath = filepath.Join(outputPath, base)
 		} else {
-			lower := strings.ToLower(outputPath)
-			switch {
-			case strings.HasSuffix(lower, ".docx"), strings.HasSuffix(lower, ".pdf"):
-				// keep as-is
-			default:
+			if !strings.HasSuffix(strings.ToLower(outputPath), ".docx") {
 				outputPath += ".docx"
 			}
 		}

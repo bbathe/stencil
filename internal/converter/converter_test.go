@@ -36,7 +36,6 @@ func TestRunWithStyle(t *testing.T) {
 	in := filepath.Join(dir, "doc.md")
 	style := filepath.Join(dir, "style.json")
 	outDocx := filepath.Join(dir, "doc.docx")
-	outPDF := filepath.Join(dir, "doc.pdf")
 	if err := os.WriteFile(in, []byte("# Hi\n\npara `code`\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -46,41 +45,11 @@ func TestRunWithStyle(t *testing.T) {
 	if err := converter.Run(converter.Options{InputPath: in, OutputPath: outDocx, StylePath: style}); err != nil {
 		t.Fatal(err)
 	}
-	if err := converter.Run(converter.Options{InputPath: in, OutputPath: outPDF, StylePath: style}); err != nil {
-		t.Fatal(err)
-	}
 	docxBytes, err := os.ReadFile(outDocx) //nolint:gosec
 	if err != nil {
 		t.Fatal(err)
 	}
-	// styles.xml is compressed in the zip; spot-check uncompressed length + PDF header.
 	if len(docxBytes) < 100 {
 		t.Fatalf("docx too small")
-	}
-	pdfBytes, err := os.ReadFile(outPDF) //nolint:gosec
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(pdfBytes[:5]) != "%PDF-" {
-		t.Fatal("pdf header")
-	}
-}
-
-func TestRunPDF(t *testing.T) {
-	dir := t.TempDir()
-	in := filepath.Join(dir, "doc.md")
-	out := filepath.Join(dir, "doc.pdf")
-	if err := os.WriteFile(in, []byte("# Hi\n\npara\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := converter.Run(converter.Options{InputPath: in, OutputPath: out}); err != nil {
-		t.Fatal(err)
-	}
-	b, err := os.ReadFile(out) //nolint:gosec
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(b) < 100 || string(b[:5]) != "%PDF-" {
-		t.Fatalf("not a pdf: size=%d head=%q", len(b), string(b[:min(8, len(b))]))
 	}
 }
