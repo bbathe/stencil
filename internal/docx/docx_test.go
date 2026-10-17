@@ -80,7 +80,7 @@ func TestThemedStyles(t *testing.T) {
 	th.Font = "Calibri"
 	th.Mono = "Consolas"
 	th.BodyPt = 11
-	th.MarginIn = 0.75
+	th.MarginIn = theme.Margins{Top: 0.75, Right: 0.75, Bottom: 0.75, Left: 0.75}
 	styles := stylesXML(th)
 	if !bytes.Contains(styles, []byte(`w:ascii="Calibri"`)) {
 		t.Fatal("expected Calibri")

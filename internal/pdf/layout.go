@@ -38,12 +38,12 @@ func newCanvas(th *theme.Theme) *canvas {
 	if th == nil {
 		th = theme.Default()
 	}
-	m := th.MarginPt()
+	top, right, bottom, left := th.MarginPt()
 	c := &canvas{
-		xLeft:   m,
-		maxW:    pageW - 2*m,
-		marginB: m,
-		marginT: m,
+		xLeft:   left,
+		maxW:    pageW - left - right,
+		marginB: bottom,
+		marginT: top,
 		lineGap: 1.25,
 		bodyPt:  th.BodyPt,
 		codePt:  th.CodePt,

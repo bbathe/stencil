@@ -2,6 +2,7 @@
 package theme
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -10,7 +11,7 @@ import (
 
 // Theme is a small set of knobs shared by the docx and PDF backends.
 type Theme struct {
-	MarginIn  float64   `json:"margin_in"`
+	MarginIn  Margins   `json:"margin_in"`
 	BodyPt    float64   `json:"body_pt"`
 	CodePt    float64   `json:"code_pt"`
 	HeadingPt []float64 `json:"heading_pt"`
@@ -18,10 +19,51 @@ type Theme struct {
 	Mono      string    `json:"mono"`
 }
 
+// Margins holds page margins in inches. JSON accepts a number (all sides)
+// or an object with top/right/bottom/left.
+type Margins struct {
+	Top    float64 `json:"top"`
+	Right  float64 `json:"right"`
+	Bottom float64 `json:"bottom"`
+	Left   float64 `json:"left"`
+	set    bool    // true if margin_in was present in JSON
+}
+
+// UnmarshalJSON accepts either a JSON number or {"top","right","bottom","left"}.
+func (m *Margins) UnmarshalJSON(data []byte) error {
+	data = bytes.TrimSpace(data)
+	if len(data) == 0 || string(data) == "null" {
+		return nil
+	}
+	m.set = true
+	if data[0] == '{' {
+		var o struct {
+			Top    float64 `json:"top"`
+			Right  float64 `json:"right"`
+			Bottom float64 `json:"bottom"`
+			Left   float64 `json:"left"`
+		}
+		if err := json.Unmarshal(data, &o); err != nil {
+			return err
+		}
+		m.Top, m.Right, m.Bottom, m.Left = o.Top, o.Right, o.Bottom, o.Left
+		return nil
+	}
+	var v float64
+	if err := json.Unmarshal(data, &v); err != nil {
+		return fmt.Errorf("margin_in must be a number or object: %w", err)
+	}
+	m.Top, m.Right, m.Bottom, m.Left = v, v, v, v
+	return nil
+}
+
 // Default returns stencil's built-in theme (matches historical hard-coded values).
 func Default() *Theme {
 	return &Theme{
-		MarginIn:  1.0,
+		MarginIn: Margins{
+			Top: 1, Right: 1, Bottom: 1, Left: 1,
+			set: true,
+		},
 		BodyPt:    12,
 		CodePt:    10,
 		HeadingPt: []float64{24, 18, 14, 12, 12, 12},
@@ -53,8 +95,19 @@ func Load(path string) (*Theme, error) {
 }
 
 func merge(dst, src *Theme) {
-	if src.MarginIn != 0 {
-		dst.MarginIn = src.MarginIn
+	if src.MarginIn.set {
+		if src.MarginIn.Top != 0 {
+			dst.MarginIn.Top = src.MarginIn.Top
+		}
+		if src.MarginIn.Right != 0 {
+			dst.MarginIn.Right = src.MarginIn.Right
+		}
+		if src.MarginIn.Bottom != 0 {
+			dst.MarginIn.Bottom = src.MarginIn.Bottom
+		}
+		if src.MarginIn.Left != 0 {
+			dst.MarginIn.Left = src.MarginIn.Left
+		}
 	}
 	if src.BodyPt != 0 {
 		dst.BodyPt = src.BodyPt
@@ -80,10 +133,27 @@ func merge(dst, src *Theme) {
 	}
 }
 
+func validateSide(name string, v float64) error {
+	if v < 0.25 || v > 2.0 {
+		return fmt.Errorf("margin_in.%s must be between 0.25 and 2.0, got %g", name, v)
+	}
+	return nil
+}
+
 // Validate checks theme values are in a usable range.
 func (t *Theme) Validate() error {
-	if t.MarginIn < 0.25 || t.MarginIn > 2.0 {
-		return fmt.Errorf("margin_in must be between 0.25 and 2.0, got %g", t.MarginIn)
+	for _, side := range []struct {
+		name string
+		v    float64
+	}{
+		{"top", t.MarginIn.Top},
+		{"right", t.MarginIn.Right},
+		{"bottom", t.MarginIn.Bottom},
+		{"left", t.MarginIn.Left},
+	} {
+		if err := validateSide(side.name, side.v); err != nil {
+			return err
+		}
 	}
 	if t.BodyPt <= 0 || t.BodyPt > 72 {
 		return fmt.Errorf("body_pt must be in (0, 72], got %g", t.BodyPt)
@@ -108,16 +178,21 @@ func (t *Theme) Validate() error {
 	return nil
 }
 
-// MarginTwips returns the margin in OOXML twips (1/20 pt, 1440 per inch).
-func (t *Theme) MarginTwips() int {
-	return int(t.MarginIn*1440 + 0.5)
+func inchesToTwips(in float64) int { return int(in*1440 + 0.5) }
+
+// MarginTwips returns top, right, bottom, left margins in OOXML twips.
+func (t *Theme) MarginTwips() (top, right, bottom, left int) {
+	return inchesToTwips(t.MarginIn.Top),
+		inchesToTwips(t.MarginIn.Right),
+		inchesToTwips(t.MarginIn.Bottom),
+		inchesToTwips(t.MarginIn.Left)
 }
 
 // ContentWidthTwips is letter width minus left and right margins.
 func (t *Theme) ContentWidthTwips() int {
 	const letterW = 12240
-	m := t.MarginTwips()
-	return letterW - 2*m
+	_, right, _, left := t.MarginTwips()
+	return letterW - left - right
 }
 
 // BodyHalfPoints is body size in OOXML half-points.
@@ -148,8 +223,13 @@ func (t *Theme) HeadingPtAt(level int) float64 {
 	return t.HeadingPt[level-1]
 }
 
-// MarginPt returns margin in PDF points (72 pt/in).
-func (t *Theme) MarginPt() float64 { return t.MarginIn * 72 }
+// MarginPt returns top, right, bottom, left margins in PDF points (72 pt/in).
+func (t *Theme) MarginPt() (top, right, bottom, left float64) {
+	return t.MarginIn.Top * 72,
+		t.MarginIn.Right * 72,
+		t.MarginIn.Bottom * 72,
+		t.MarginIn.Left * 72
+}
 
 // NormalizePDFFonts maps theme font names onto PDF built-in faces.
 // PDF only ships Helvetica / Courier; unknown names fall back to those.

@@ -245,11 +245,11 @@ func (d *Document) documentXML() ([]byte, error) {
 		}
 	}
 
-	m := th.MarginTwips()
+	top, right, bottom, left := th.MarginTwips()
 	fmt.Fprintf(&b, `<w:sectPr>`+
 		`<w:pgSz w:w="12240" w:h="15840"/>`+
 		`<w:pgMar w:top="%d" w:right="%d" w:bottom="%d" w:left="%d" w:header="720" w:footer="720" w:gutter="0"/>`+
-		`</w:sectPr>`+"\n", m, m, m, m)
+		`</w:sectPr>`+"\n", top, right, bottom, left)
 	b.WriteString(`</w:body></w:document>`)
 	return b.Bytes(), nil
 }

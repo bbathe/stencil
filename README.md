@@ -49,6 +49,14 @@ Optional JSON controls layout knobs shared by DOCX and PDF. Omitted keys keep de
 }
 ```
 
+`margin_in` may be a single number (all sides) or per-side:
+
+```json
+"margin_in": { "top": 1.0, "right": 0.75, "bottom": 1.0, "left": 0.5 }
+```
+
+Omitted sides keep the default (1.0 in). Each side must be between 0.25 and 2.0.
+
 - **DOCX** uses `font` / `mono` as named fonts in the document.
 - **PDF** only has built-in Helvetica and Courier; names like Arial, Aptos, Consolas are mapped to those faces (unknown names fall back the same way). Margins and point sizes apply fully.
 
