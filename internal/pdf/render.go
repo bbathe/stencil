@@ -15,24 +15,18 @@ import (
 	"github.com/bbathe/stencil/internal/parser"
 )
 
-// Options configures PDF rendering.
-type Options struct {
-	BaseDir string // reserved for future image paths; unused in v1
-}
-
 // Render writes a PDF file for doc to outputPath.
-func Render(doc *parser.Document, outputPath string, opts Options) error {
+func Render(doc *parser.Document, outputPath string) error {
 	f, err := os.Create(outputPath) //nolint:gosec // path is caller-supplied
 	if err != nil {
 		return err
 	}
 	defer func() { _ = f.Close() }()
-	return RenderTo(doc, f, opts)
+	return RenderTo(doc, f)
 }
 
 // RenderTo writes a PDF for doc to w.
-func RenderTo(doc *parser.Document, w io.Writer, opts Options) error {
-	_ = opts
+func RenderTo(doc *parser.Document, w io.Writer) error {
 	r := &walker{
 		source:       doc.Source,
 		canvas:       newCanvas(),

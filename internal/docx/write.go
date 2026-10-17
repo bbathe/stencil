@@ -58,12 +58,7 @@ func (d *Document) Write(w io.Writer) (retErr error) {
 		}
 	}
 
-	// Styles — use template's or built-in defaults
-	styles := d.styles
-	if styles == nil {
-		styles = defaultStyles()
-	}
-	if err := writeEntry(zw, "word/styles.xml", styles); err != nil {
+	if err := writeEntry(zw, "word/styles.xml", defaultStyles()); err != nil {
 		return err
 	}
 

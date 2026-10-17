@@ -16,7 +16,6 @@ import (
 
 	"github.com/bbathe/stencil/internal/parser"
 	"github.com/bbathe/stencil/internal/renderer"
-	"github.com/bbathe/stencil/internal/stylemap"
 )
 
 func TestGoldenFeatures(t *testing.T) {
@@ -56,19 +55,15 @@ func TestGoldenFeatures(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sm, err := stylemap.Load("")
-	if err != nil {
-		t.Fatal(err)
-	}
 
 	var buf bytes.Buffer
-	if err := renderer.RenderTo(doc, &buf, renderer.Options{BaseDir: dir, StyleMap: sm}); err != nil {
+	if err := renderer.RenderTo(doc, &buf, renderer.Options{BaseDir: dir}); err != nil {
 		t.Fatal(err)
 	}
 
 	// Determinism: second render must match.
 	var buf2 bytes.Buffer
-	if err := renderer.RenderTo(doc, &buf2, renderer.Options{BaseDir: dir, StyleMap: sm}); err != nil {
+	if err := renderer.RenderTo(doc, &buf2, renderer.Options{BaseDir: dir}); err != nil {
 		t.Fatal(err)
 	}
 	if !bytes.Equal(buf.Bytes(), buf2.Bytes()) {
@@ -123,9 +118,8 @@ func TestImageRelativeToBaseDir(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sm, _ := stylemap.Load("")
 	out := filepath.Join(dir, "out.docx")
-	if err := renderer.Render(doc, out, renderer.Options{BaseDir: dir, StyleMap: sm}); err != nil {
+	if err := renderer.Render(doc, out, renderer.Options{BaseDir: dir}); err != nil {
 		t.Fatal(err)
 	}
 	data, err := os.ReadFile(out) //nolint:gosec // G304: test temp path
@@ -144,9 +138,8 @@ func TestRemoteImageFallsBack(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sm, _ := stylemap.Load("")
 	var buf bytes.Buffer
-	if err := renderer.RenderTo(doc, &buf, renderer.Options{StyleMap: sm}); err != nil {
+	if err := renderer.RenderTo(doc, &buf, renderer.Options{}); err != nil {
 		t.Fatal(err)
 	}
 	parts := unzip(t, buf.Bytes())
@@ -162,9 +155,8 @@ func TestRichTextInsideLinks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sm, _ := stylemap.Load("")
 	var buf bytes.Buffer
-	if err := renderer.RenderTo(doc, &buf, renderer.Options{StyleMap: sm}); err != nil {
+	if err := renderer.RenderTo(doc, &buf, renderer.Options{}); err != nil {
 		t.Fatal(err)
 	}
 	docXML := string(unzip(t, buf.Bytes())["word/document.xml"])
@@ -199,9 +191,8 @@ func TestLooseListItemContinuationIndent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sm, _ := stylemap.Load("")
 	var buf bytes.Buffer
-	if err := renderer.RenderTo(doc, &buf, renderer.Options{StyleMap: sm}); err != nil {
+	if err := renderer.RenderTo(doc, &buf, renderer.Options{}); err != nil {
 		t.Fatal(err)
 	}
 	docXML := string(unzip(t, buf.Bytes())["word/document.xml"])
@@ -221,9 +212,8 @@ func TestUnhandledNodeErrors(t *testing.T) {
 	md := goldmark.New(goldmark.WithExtensions(extension.DefinitionList))
 	node := md.Parser().Parse(text.NewReader(src))
 	doc := &parser.Document{Node: node, Source: src}
-	sm, _ := stylemap.Load("")
 	var buf bytes.Buffer
-	err := renderer.RenderTo(doc, &buf, renderer.Options{StyleMap: sm})
+	err := renderer.RenderTo(doc, &buf, renderer.Options{})
 	if err == nil {
 		t.Fatal("expected error for unhandled definition-list nodes")
 	}

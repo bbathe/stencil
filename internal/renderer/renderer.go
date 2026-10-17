@@ -10,14 +10,11 @@ import (
 
 	"github.com/bbathe/stencil/internal/docx"
 	"github.com/bbathe/stencil/internal/parser"
-	"github.com/bbathe/stencil/internal/stylemap"
 )
 
 // Options controls how a parsed document is rendered to DOCX.
 type Options struct {
-	TemplatePath string // optional reference .docx (styles.xml only)
-	BaseDir      string // resolve relative image paths against this directory
-	StyleMap     *stylemap.StyleMap
+	BaseDir string // resolve relative image paths against this directory
 }
 
 // Render walks doc and writes a DOCX file to outputPath.
@@ -39,33 +36,12 @@ func RenderTo(doc *parser.Document, w io.Writer, opts Options) error {
 }
 
 func build(doc *parser.Document, opts Options) (*docx.Document, error) {
-	var (
-		d   *docx.Document
-		err error
-	)
-
-	if opts.TemplatePath != "" {
-		d, err = docx.LoadTemplate(opts.TemplatePath)
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		d = docx.New()
-	}
+	d := docx.New()
 	d.BaseDir = opts.BaseDir
-
-	sm := opts.StyleMap
-	if sm == nil {
-		sm, err = stylemap.Load("")
-		if err != nil {
-			return nil, err
-		}
-	}
 
 	wk := &walker{
 		doc:                d,
 		source:             doc.Source,
-		styleMap:           sm,
 		footnoteIDs:        make(map[int]int),
 		footnoteParagraphs: make(map[int]*docx.Para),
 		unknownKinds:       make(map[string]bool),

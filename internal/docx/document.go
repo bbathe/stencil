@@ -17,14 +17,12 @@
 package docx
 
 import (
-	"archive/zip"
 	"bytes"
 	"fmt"
 	"image"
 	_ "image/gif"
 	_ "image/jpeg"
 	_ "image/png"
-	"io"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -40,8 +38,7 @@ var fixedZipTime = time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
 
 // Document accumulates content and serialises it to a .docx file.
 type Document struct {
-	body   []bodyElement
-	styles []byte // raw styles.xml; nil = built-in defaults
+	body []bodyElement
 
 	// relationships
 	hyperlinks   []hyperlinkEntry
@@ -80,44 +77,6 @@ type footnoteEntry struct {
 
 // New returns an empty Document.
 func New() *Document { return &Document{} }
-
-// LoadTemplate opens a reference .docx and borrows its styles.xml.
-func LoadTemplate(path string) (*Document, error) {
-	f, err := os.Open(path) //nolint:gosec // path is caller-supplied template flag
-	if err != nil {
-		return nil, fmt.Errorf("opening template %q: %w", path, err)
-	}
-	defer func() { _ = f.Close() }()
-
-	fi, err := f.Stat()
-	if err != nil {
-		return nil, err
-	}
-
-	zr, err := zip.NewReader(f, fi.Size())
-	if err != nil {
-		return nil, fmt.Errorf("reading template zip %q: %w", path, err)
-	}
-
-	for _, zf := range zr.File {
-		if zf.Name == "word/styles.xml" {
-			rc, err := zf.Open()
-			if err != nil {
-				return nil, fmt.Errorf("reading styles from template: %w", err)
-			}
-			data, err := io.ReadAll(rc)
-			if cerr := rc.Close(); cerr != nil && err == nil {
-				err = cerr
-			}
-			if err != nil {
-				return nil, err
-			}
-			return &Document{styles: data}, nil
-		}
-	}
-
-	return New(), nil
-}
 
 // ── Resource registration ─────────────────────────────────────────────────────
 

@@ -11,15 +11,13 @@ import (
 
 	"github.com/bbathe/stencil/internal/docx"
 	"github.com/bbathe/stencil/internal/highlight"
-	"github.com/bbathe/stencil/internal/stylemap"
 )
 
 // ── Walker state ──────────────────────────────────────────────────────────────
 
 type walker struct {
-	doc      *docx.Document
-	source   []byte
-	styleMap *stylemap.StyleMap
+	doc    *docx.Document
+	source []byte
 
 	currentPara *docx.Para // paragraph being built during inline walk
 
@@ -136,7 +134,7 @@ func (w *walker) ensureCurrentPara() {
 		return
 	}
 	if w.currentListItem() != nil {
-		p := w.doc.AddParagraph(w.styleMap.Style("list_item"))
+		p := w.doc.AddParagraph(styleName("list_item"))
 		w.applyListItemFormatting(p)
 		w.currentPara = p
 	}
@@ -161,7 +159,7 @@ func (w *walker) visit(node ast.Node, entering bool) (ast.WalkStatus, error) {
 	case *ast.Heading:
 		if entering {
 			key := fmt.Sprintf("heading%d", n.Level)
-			p := w.doc.AddParagraph(w.styleMap.Style(key))
+			p := w.doc.AddParagraph(styleName(key))
 			w.currentPara = p
 		} else {
 			w.currentPara = nil
@@ -184,12 +182,12 @@ func (w *walker) visit(node ast.Node, entering bool) (ast.WalkStatus, error) {
 				break
 			}
 			inList := w.currentListItem() != nil
-			style := w.styleMap.Style("body")
+			style := styleName("body")
 			switch {
 			case inList:
-				style = w.styleMap.Style("list_item")
+				style = styleName("list_item")
 			case w.blockquoteDepth > 0:
-				style = w.styleMap.Style("blockquote")
+				style = styleName("blockquote")
 			}
 			p := w.doc.AddParagraph(style)
 			if inList {
@@ -219,7 +217,7 @@ func (w *walker) visit(node ast.Node, entering bool) (ast.WalkStatus, error) {
 
 	case *ast.ThematicBreak:
 		if entering {
-			p := w.doc.AddParagraph(w.styleMap.Style("body"))
+			p := w.doc.AddParagraph(styleName("body"))
 			p.SetHRule()
 		}
 
@@ -249,7 +247,7 @@ func (w *walker) visit(node ast.Node, entering bool) (ast.WalkStatus, error) {
 				sb.Write(seg.Value(w.source))
 			}
 			if text := stripHTMLTags(sb.String()); text != "" {
-				p := w.doc.AddParagraph(w.styleMap.Style("body"))
+				p := w.doc.AddParagraph(styleName("body"))
 				p.AddRun(text)
 			}
 		}
@@ -315,7 +313,7 @@ func (w *walker) visit(node ast.Node, entering bool) (ast.WalkStatus, error) {
 
 	case *extast.TableCell:
 		if entering && w.currentRow != nil {
-			p := w.currentRow.AddCell(w.styleMap.Style("body"))
+			p := w.currentRow.AddCell(styleName("body"))
 			switch n.Alignment {
 			case extast.AlignLeft:
 				p.SetAlignment(docx.AlignLeft)
@@ -590,7 +588,7 @@ func (w *walker) emitCodeBlock(lines *text.Segments, lang string) {
 	lineGroups := splitTokensByLine(tokens)
 
 	for _, group := range lineGroups {
-		p := w.doc.AddParagraph(w.styleMap.Style("code_block"))
+		p := w.doc.AddParagraph(styleName("code_block"))
 		for _, lt := range group {
 			if lt.color != "" {
 				p.AddCodeColorRun(lt.text, lt.color)

@@ -32,15 +32,11 @@ func main() {
 	}
 
 	var (
-		templatePath string
-		outputPath   string
-		styleMapPath string
-		showVersion  bool
+		outputPath  string
+		showVersion bool
 	)
 
-	flag.StringVar(&templatePath, "template", "", "path to reference .docx (borrows styles.xml only)")
 	flag.StringVar(&outputPath, "output", "", "output path (default: input with .docx extension; \"-\" for stdout; use .pdf for PDF)")
-	flag.StringVar(&styleMapPath, "style-map", "", "path to JSON style-map file (docx only)")
 	flag.BoolVar(&showVersion, "version", false, "print version and exit")
 
 	// Go's flag package stops at the first non-flag argument, so
@@ -92,10 +88,8 @@ func main() {
 	}
 
 	opts := converter.Options{
-		InputPath:    inputPath,
-		OutputPath:   outputPath,
-		TemplatePath: templatePath,
-		StyleMapPath: styleMapPath,
+		InputPath:  inputPath,
+		OutputPath: outputPath,
 	}
 
 	if err := converter.Run(opts); err != nil {
@@ -114,14 +108,9 @@ func main() {
 // It understands which of stencil's own flags take a value so it can
 // correctly pair e.g. ["--output", "foo.docx"] as a single flag entry.
 func splitArgs(args []string) (flags, positional []string) {
-	// Flags that consume the next token as their value.
 	valueFlags := map[string]bool{
-		"-template":   true,
-		"--template":  true,
-		"-output":     true,
-		"--output":    true,
-		"-style-map":  true,
-		"--style-map": true,
+		"-output":  true,
+		"--output": true,
 	}
 
 	i := 0
@@ -129,34 +118,29 @@ func splitArgs(args []string) (flags, positional []string) {
 		arg := args[i]
 
 		if !strings.HasPrefix(arg, "-") {
-			// Plain positional argument.
 			positional = append(positional, arg)
 			i++
 			continue
 		}
 
-		// Bare "-" is stdin, not a flag.
 		if arg == "-" {
 			positional = append(positional, arg)
 			i++
 			continue
 		}
 
-		// -flag=value or --flag=value: self-contained, no next token needed.
 		if strings.Contains(arg, "=") {
 			flags = append(flags, arg)
 			i++
 			continue
 		}
 
-		// Boolean flags or unknown single-token flags.
 		if !valueFlags[arg] {
 			flags = append(flags, arg)
 			i++
 			continue
 		}
 
-		// Value flag: consume the next token too.
 		flags = append(flags, arg)
 		if i+1 < len(args) {
 			flags = append(flags, args[i+1])

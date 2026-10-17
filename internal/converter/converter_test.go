@@ -49,18 +49,3 @@ func TestRunPDF(t *testing.T) {
 		t.Fatalf("not a pdf: size=%d head=%q", len(b), string(b[:min(8, len(b))]))
 	}
 }
-
-func TestRunPDFRejectsTemplate(t *testing.T) {
-	dir := t.TempDir()
-	in := filepath.Join(dir, "doc.md")
-	out := filepath.Join(dir, "doc.pdf")
-	_ = os.WriteFile(in, []byte("# Hi\n"), 0o600)
-	err := converter.Run(converter.Options{
-		InputPath:    in,
-		OutputPath:   out,
-		TemplatePath: "x.docx",
-	})
-	if err == nil {
-		t.Fatal("expected error")
-	}
-}
